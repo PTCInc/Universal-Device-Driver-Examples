@@ -79,6 +79,17 @@ function onProfileLoad() {
     return { version: VERSION, mode: MODE };
 }
 
+function onValidateTag(info) {
+
+    // Check if it's LoggingLevel tag
+    if (info.tag.address === LOGGING_LEVEL_TAG.address) {
+        info.tag = validateLoggingTag(info.tag)
+        log('onValidateTag - address "' + info.tag.address + '" is valid.', DEBUG_LOGGING)
+        return info.tag;
+    }
+
+}
+
 function onTagsRequest(info) {
     // Check if tag is LoggingLevel, update from cached value
     if (info.tags[0].address === LOGGING_LEVEL_TAG.address){
@@ -91,17 +102,6 @@ function onTagsRequest(info) {
 /**
  * Helper Functions for Logging Tag functionality 
  */
-function onValidateTag(info) {
-
-    // Check if it's LoggingLevel tag
-    if (info.tag.address === LOGGING_LEVEL_TAG.address) {
-        info.tag = validateLoggingTag(info.tag)
-        log('onValidateTag - address "' + info.tag.address + '" is valid.', DEBUG_LOGGING)
-        return info.tag;
-    }
-
-}
-
 
 /**
  * Validate LoggingLevel tag
