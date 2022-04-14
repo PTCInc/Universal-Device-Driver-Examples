@@ -12,7 +12,7 @@
  * Developed on Kepware Server version 6.11, UDD V2.0
  * 
  * 
- * Version: 0.0.7
+ * Version: 0.1.0
 ******************************************************************************/
 /**
  * @typedef {string} MessageType - Type of communication "Read", "Write".
@@ -29,7 +29,7 @@
 /**
  * @typedef {object} Tag
  * @property {string}   Tag.address  - Tag address.
- * @property {DataType} Tag.dataType - Kepserver data type.
+ * @property {DataType} Tag.dataType - Kepware data type.
  * @property {boolean}  Tag.readOnly - Indicates permitted communication mode.
  */ 
  
@@ -48,7 +48,7 @@
  /**
  * @typedef {object} OnValidateTagResult
  * @property {string}   address     - (optional) Fixed up tag address.
- * @property {DataType} dataType    - (optional) Fixed up Kepserver data type. Required if input dataType is "Default".
+ * @property {DataType} dataType    - (optional) Fixed up Kepware data type. Required if input dataType is "Default".
  * @property {boolean}  readOnly    - (optional) Fixed up permitted communication mode.
  * @property {boolean}  valid       - Indicates address validity.
  */ 
@@ -72,6 +72,9 @@ const MODE = "Client"
 const ACTIONRECEIVE = "Receive"
 const ACTIONCOMPLETE = "Complete"
 const ACTIONFAILURE = "Fail"
+
+const READ = "Read"
+const WRITE = "Write"
 
 /** SDS Connection State **/
 let ActiveConnection = false;
@@ -277,7 +280,7 @@ function onProfileLoad() {
  */
 function onValidateTag(info) {
 
-    log(`onValidateTag - info: ${JSON.stringify(info)}  `, DEBUG_LOGGING)
+    log(`onValidateTag - info: ${JSON.stringify(info)}`, DEBUG_LOGGING)
 
     // Check if it's LoggingLevel tag
     if (info.tag.address === LOGGING_LEVEL_TAG.address) {
@@ -408,12 +411,12 @@ function onTagsRequest(info) {
     log(`onTagsRequest - addressData: ${JSON.stringify(addressData)}`, DEBUG_LOGGING)
 
     // If connection and loging is active, then process transaction request
-    if (info.type === "Read") {
+    if (info.type === READ) {
         let result = processReadCmd(info.tags)
         return result
     }
     
-    if (info.type === "Write"){
+    if (info.type === WRITE){
         let result = processWriteCmd(tag);
         return result;
     }
@@ -508,11 +511,11 @@ function onData(info) {
 
                 // Verify if a tag request was part of the login event
                 if (tag !== undefined){
-                    if (info.type === 'Write'){
+                    if (info.type === WRITE){
                         let result = processWriteCmd(tag);
                         respActions.push(result)
                     }
-                    else if (info.type === 'Read'){
+                    else if (info.type === READ){
                         let result = processReadCmd(info.tags)
                         respActions.push(result)
                     }
@@ -674,7 +677,7 @@ function onData(info) {
 
     // Check to ensure that if a solicited read request is in this transaction and ensure that if there is no value to 
     // update the tag, then do another ACTIONRECEIVE to wait for the read response.
-    if (info.type === 'Read' && !returnActions.hasOwnProperty("tags") && returnActions.action !== ACTIONRECEIVE && !SDS_Failure){
+    if (info.type === READ && !returnActions.hasOwnProperty("tags") && returnActions.action !== ACTIONRECEIVE && !SDS_Failure){
         log(`onData - Tag response is expected, but didn't have response yet. Update action to '${ACTIONRECEIVE}'`, DEBUG_LOGGING)
         returnActions.action = ACTIONRECEIVE;
     }
@@ -979,7 +982,7 @@ function validateLoggingTag(tag) {
  */
 function updateLoggingTag(info) {
     let value = undefined;
-    if (info.type === "Write"){
+    if (info.type === WRITE){
         writeToCache(LOGGING_LEVEL_TAG.address, info.tags[0].value)
         return {action: ACTIONCOMPLETE}
     }
