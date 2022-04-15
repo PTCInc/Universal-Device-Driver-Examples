@@ -12,6 +12,8 @@ Profiles have versions, which follow the pattern: \<major>.\<minor>.\<update>, w
 
 Pull Requests can be created by any user wanting to contribute to the repo. The owners of the repo will approve pull requests as changes are reviewed and will determine if changes meet the intent of the repository.
 
-## Issues
+## Issues and Discussions in Github
 
-The issues feature of GitHub will be used as the primary means of communication.  An issue may be a bug report, a feature request, a question about how to use of a profile, etc.  When creating or working issues, contributors are encouraged to use permalinks to link to other files in a repo.  Crosslinking of issues, when they are related, is also encouraged. When creating pull requests that resolve issues, include the Issue as a cross link in the PR.
+The Issues and Discussions features of GitHub will be used as the primary means of communication.  An issue may be a bug report or identifying an issue found wtih a profile. When creating or working issues, contributors are encouraged to use permalinks to link to other files in a repo.  Crosslinking of issues, when they are related, is also encouraged. When creating pull requests that resolve issues, include the Issue as a cross link in the PR.
+
+If there is a question about how to use of a profile, recommended feature request, or general inquiries should be made in the Discussions section of the repo.
