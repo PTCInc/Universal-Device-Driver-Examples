@@ -2,7 +2,7 @@
 
 With UDD, the Kepware prodcut teams at PTC wanted to provide a easy and modern way to share example profiles that customers can use and extend for connectivity needs. This repository is intended to provide end users access to example profiles, collaborate and share profiles, and share feedback on issues they may have. The repository is owned and maintained by the Kepware Solutions Consulting team at PTC.
 
-Because the profiles are provided "as-is" per the [licensing terms](..\license.md) there is no guarenteed response whenever an Issue is reported or question posted. In some cases, the owners may reach out to you directly in response to an issue/question and coordinate other means to share data as needed.
+Because the profiles are provided "as-is" per the [licensing terms](../license.md) there is no guarenteed response whenever an Issue is reported or question posted. In some cases, the owners may reach out to you directly in response to an issue/question and coordinate other means to share data as needed.
 
 ## Versions of UDD Profiles
 
