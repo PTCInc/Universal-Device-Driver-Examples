@@ -22,7 +22,7 @@ Profiles in this repository target the UDD v2.0 design included in Thingworx Kep
 
 ## Issues
 
-As stated in the disclaimer and license of this repository, these profiles are provided "as-is". For any questions or problems that are encountered, please open an Issue within the repository. See [Repository Guidelines](docs\Repo-Guidelines.md) for more information.
+As stated in the disclaimer and license of this repository, these profiles are provided "as-is". For any questions or problems that are encountered, please open an Issue within the repository. See [Repository Guidelines](docs/Repo-Guidelines.md) for more information.
 
 ## Need More Information
 
