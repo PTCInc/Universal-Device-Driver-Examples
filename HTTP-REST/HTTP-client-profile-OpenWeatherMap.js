@@ -10,6 +10,8 @@
  * OpenWeatherMap (https://openweathermap.org/api) has APIs that can be queried for various
  * weather data. This example uses the One Call API (https://openweathermap.org/api/one-call-api)
  * 
+ * User will need to create a free API key to be able to query endpoint
+ * 
  * Developed on Kepware Server version 6.11, UDD V2.0
  * 
  * Version:     0.1.0
@@ -274,7 +276,7 @@ function onTagsRequest(info) {
     switch(info.type){
         case READ:
             // Build the request as a string
-            let appId = "7beb56791d92be6f8576b69f85246c91";  // API key
+            let appId = "{Update API Key}";  // API key
             // Host information
             let host = "api.openweathermap.org"; // IP address of REST 
             let port = "80"
