@@ -168,8 +168,6 @@ const data_types = {
  * @return {OnValidateTagResult}  - Single tag with a populated '.valid' field set.
  *
  * 
- * Example TCP stream:
- * 2021-01-29T11:30:440Z|Source|TRAN_1|pH|2.1|EC|3.2|CONC|4.4|FluidTemp|5.5|DO|6.7
  * 
 */
 function onValidateTag(info) {
@@ -181,9 +179,14 @@ function onValidateTag(info) {
         return info.tag;
     }
 
+    
     /** 
      * The regular expression to compare address to. This example just validates that 
      * the address is at least one any "word" character, similar to [a-zA-Z0-9_]
+     * 
+     * Example TCP stream:
+     * 2021-01-29T11:30:440Z|Source|TRAN_1|pH|2.1|EC|3.2|CONC|4.4|FluidTemp|5.5|DO|6.7
+     * 
     */
     let regex = /^\w+$/;
 
