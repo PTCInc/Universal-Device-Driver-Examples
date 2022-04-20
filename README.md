@@ -28,6 +28,6 @@ As stated in the disclaimer and license of this repository, these profiles are p
 
 **Visit:**
 
-- [Kepware.com](https://www.kepware.com/)
 - [Universal Device driver (UDD)](https://www.kepware.com/products/kepserverex/drivers/udd/)
+- [Kepware.com](https://www.kepware.com/)
 - [PTC.com](https://www.ptc.com/)
