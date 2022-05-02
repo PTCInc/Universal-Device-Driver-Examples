@@ -18,8 +18,13 @@
  * Output will include levels below the current value i.e. Setting to Debug will include 
  * verbose output.
  * 
- * Version: 0.0.1
+ * Version: 0.0.2
 ******************************************************************************/
+
+/** Status types */
+const ACTIONRECEIVE = "Receive"
+const ACTIONCOMPLETE = "Complete"
+const ACTIONFAILURE = "Fail"
 
 /**
  * Logging Level System tag - control logging level from client application
