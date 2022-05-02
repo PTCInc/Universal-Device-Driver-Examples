@@ -17,6 +17,24 @@ const ACTIONRECEIVE = "Receive"
 const ACTIONCOMPLETE = "Complete"
 const ACTIONFAILURE = "Fail"
 
+// Global variable for all Kepware supported data_types
+const data_types = {
+    DEFAULT: "Default",
+    STRING: "String", 
+    BOOLEAN: "Boolean", 
+    CHAR: "Char",
+    BYTE: "Byte",
+    SHORT: "Short",
+    WORD: "Word",
+    LONG: "Long",
+    DWORD: "DWord",
+    FLOAT: "Float",
+    DOUBLE: "Double",
+    BCD: "BCD",
+    LBCD: "LBCD",
+    LLONG: "LLong",
+    QWORD: "QWord" 
+}
 
 /**
  * Below are snippets that can be added to the event handler functions for UDD
