@@ -12,7 +12,7 @@
  * 
  * Developed on Kepware Server version 6.11, UDD V2.0
  * 
- * Version:     0.1.0
+ * Version:     0.1.1
 ******************************************************************************/
 /**
  * @typedef {string} MessageType - Type of communication "Read", "Write".
@@ -74,6 +74,25 @@ const ACTIONFAILURE = "Fail"
 const READ = "Read"
 const WRITE = "Write"
 
+// Global variable for all Kepware supported data_types
+const data_types = {
+    DEFAULT: "Default",
+    STRING: "String", 
+    BOOLEAN: "Boolean", 
+    CHAR: "Char",
+    BYTE: "Byte",
+    SHORT: "Short",
+    WORD: "Word",
+    LONG: "Long",
+    DWORD: "DWord",
+    FLOAT: "Float",
+    DOUBLE: "Double",
+    BCD: "BCD",
+    LBCD: "LBCD",
+    LLONG: "LLong",
+    QWORD: "QWord" 
+}
+
 // Change profile to solicit string or listen for unsolicited data publishes
 // Values are "Solicited" or "Unsolicited"
 const DATAMODE = "Unsolicited"
@@ -86,7 +105,7 @@ const DATAMODE = "Unsolicited"
 
  const LOGGING_LEVEL_TAG = {
     address: "LoggingLevel",
-    dataType: "word",
+    dataType: data_types.WORD,
     readOnly: false,
 }
 const STD_LOGGING = 0;
@@ -117,24 +136,6 @@ log = function (msg, level = STD_LOGGING) {
     }
 }
 
-// Global variable for all Kepware supported data_types
-const data_types = {
-    DEFAULT: "Default",
-    STRING: "String", 
-    BOOLEAN: "Boolean", 
-    CHAR: "Char",
-    BYTE: "Byte",
-    SHORT: "Short",
-    WORD: "Word",
-    LONG: "Long",
-    DWORD: "DWord",
-    FLOAT: "Float",
-    DOUBLE: "Double",
-    BCD: "BCD",
-    LBCD: "LBCD",
-    LLONG: "LLong",
-    QWORD: "QWord" 
-}
 
 
 
@@ -229,6 +230,12 @@ function onValidateTag(info) {
  function onTagsRequest(info) {
     log(`onTagsRequest - info: ${JSON.stringify(info)}`, DEBUG_LOGGING)
 
+    // Check if tag is LoggingLevel, update from cached value
+    if (info.tags[0].address === LOGGING_LEVEL_TAG.address){
+        let returnAction = updateLoggingTag(info);
+        return returnAction;
+    }
+
     switch(info.type){
         case READ:
             if(DATAMODE == "Solicited"){
@@ -286,7 +293,7 @@ function onValidateTag(info) {
  * @return {OnTransactionResult}   - The action to take, tags to complete (if any) and/or data to send (if any).
  */
  function onData(info) {
-    log(`onValidateTag - info: ${JSON.stringify(info.tags)}`, DEBUG_LOGGING)
+    log(`onData - info.tags: ${JSON.stringify(info.tags)}`, DEBUG_LOGGING)
 
     // Writes are not permitted
     if (info.type === WRITE){
@@ -349,4 +356,42 @@ function onValidateTag(info) {
 
     // return an array of bytes
     return byteArray;
+}
+
+/**
+ * Helper Functions for Logging Tag functionality 
+ */
+
+/**
+ * Validate LoggingLevel tag
+ * @param {Tag} tag 
+ * @returns {Tag} LoggingLevel Tag validation results
+ */
+
+ function validateLoggingTag(tag) {
+    if (tag.dataType === data_types.DEFAULT){
+        tag.dataType = data_types.WORD
+    }
+    tag.readOnly = false;
+    tag.valid = true;
+
+    return tag
+}
+
+/**
+ * Update the Logging tag to either read the value or modify the level.
+ * @param {info} info 
+ * @returns {OnTransactionResult} Transaction Result for LoggingLevel Tag
+ */
+function updateLoggingTag(info) {
+    let value = undefined;
+    if (info.type === WRITE){
+        writeToCache(LOGGING_LEVEL_TAG.address, info.tags[0].value)
+        return {action: ACTIONCOMPLETE}
+    }
+    else {
+        value = readFromCache(LOGGING_LEVEL_TAG.address).value
+        info.tags[0].value = value;
+        return { action: ACTIONCOMPLETE, tags: info.tags};
+    }
 }

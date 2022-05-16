@@ -18,13 +18,35 @@
  * Output will include levels below the current value i.e. Setting to Debug will include 
  * verbose output.
  * 
- * Version: 0.0.2
+ * Version: 0.0.3
 ******************************************************************************/
 
 /** Status types */
 const ACTIONRECEIVE = "Receive"
 const ACTIONCOMPLETE = "Complete"
 const ACTIONFAILURE = "Fail"
+
+const READ = "Read"
+const WRITE = "Write"
+
+// Global variable for all Kepware supported data_types
+const data_types = {
+    DEFAULT: "Default",
+    STRING: "String", 
+    BOOLEAN: "Boolean", 
+    CHAR: "Char",
+    BYTE: "Byte",
+    SHORT: "Short",
+    WORD: "Word",
+    LONG: "Long",
+    DWORD: "DWord",
+    FLOAT: "Float",
+    DOUBLE: "Double",
+    BCD: "BCD",
+    LBCD: "LBCD",
+    LLONG: "LLong",
+    QWORD: "QWord" 
+}
 
 /**
  * Logging Level System tag - control logging level from client application
@@ -34,7 +56,7 @@ const ACTIONFAILURE = "Fail"
 
 const LOGGING_LEVEL_TAG = {
     address: "LoggingLevel",
-    dataType: "word",
+    dataType: data_types.WORD,
     readOnly: false,
 }
 const STD_LOGGING = 0;
@@ -115,8 +137,8 @@ function onTagsRequest(info) {
  */
 
  function validateLoggingTag(tag) {
-    if (tag.dataType === "Default"){
-        tag.dataType = "word"
+    if (tag.dataType === data_types.DEFAULT){
+        tag.dataType = data_types.WORD
     }
     tag.readOnly = false;
     tag.valid = true;
@@ -131,7 +153,7 @@ function onTagsRequest(info) {
  */
 function updateLoggingTag(info) {
     let value = undefined;
-    if (info.type === "Write"){
+    if (info.type === WRITE){
         writeToCache(LOGGING_LEVEL_TAG.address, info.tags[0].value)
         return {action: ACTIONCOMPLETE}
     }
