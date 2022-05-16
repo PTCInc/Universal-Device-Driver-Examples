@@ -30,22 +30,27 @@ Tags can be created either using a predefined data address, system address or an
 
 ### Predefined Data Addressing
 
-- Format: *predefaddress.function*
+- Format: *predefaddress##.function*
   - predefaddress – predefined address as defined in table below
+  - \## - Instance or Scale #
   - function – method to read object
     - read – solicited read requests for object value
     - callback – subscription for object value
+
+- Examples:
+  - GrossWeight01.read – solicited reads for value
+  - GrossWeight01.callback – subscription setup and listen for values published
 
 The following addresses can be used to monitor predefined values.
 
 |Tag|Data Type| Description|
 | :----------:  | :----------:  | :----------:  |
-|GrossWeight|Float|Gross weight for first scale only; Equivilent to wt0101 SDS address|
-|NetWeight|Float|Net weight for first scale only; Equivilent to wt0102 SDS address|
-|TareWeight|Float|Tare weight for first scale only; Equivilent to ws0110 SDS address|
-|Units|String|Units for weight values of first scale only; Equivilent to wt0103 SDS address|
-|ScaleID|String|Text Identifier name for first scale only; Equivilent to cs0103 SDS address|
-|ScaleMode|String|Scale mode (Gross or Net) configured for first scale only; Equivilent to ws0101 SDS address|
+|GrossWeight|Float|Gross weight for first scale only; Equivilent to wt##01 SDS address|
+|NetWeight|Float|Net weight for first scale only; Equivilent to wt##02 SDS address|
+|TareWeight|Float|Tare weight for first scale only; Equivilent to ws##10 SDS address|
+|Units|String|Units for weight values of first scale only; Equivilent to wt##03 SDS address|
+|ScaleID|String|Text Identifier name for first scale only; Equivilent to cs##03 SDS address|
+|ScaleMode|String|Scale mode (Gross or Net) configured for first scale only; Equivilent to ws##01 SDS address|
 
 ### System Addressing
 
