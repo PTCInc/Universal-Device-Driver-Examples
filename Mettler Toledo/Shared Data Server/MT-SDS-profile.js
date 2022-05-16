@@ -12,7 +12,7 @@
  * Developed on Kepware Server version 6.11, UDD V2.0
  * 
  * 
- * Version: 0.1.0
+ * Version: 0.1.1
 ******************************************************************************/
 /**
  * @typedef {string} MessageType - Type of communication "Read", "Write".
@@ -76,6 +76,25 @@ const ACTIONFAILURE = "Fail"
 const READ = "Read"
 const WRITE = "Write"
 
+// Global variable for all Kepware supported data_types
+const data_types = {
+    DEFAULT: "Default",
+    STRING: "String", 
+    BOOLEAN: "Boolean", 
+    CHAR: "Char",
+    BYTE: "Byte",
+    SHORT: "Short",
+    WORD: "Word",
+    LONG: "Long",
+    DWORD: "DWord",
+    FLOAT: "Float",
+    DOUBLE: "Double",
+    BCD: "BCD",
+    LBCD: "LBCD",
+    LLONG: "LLong",
+    QWORD: "QWord" 
+}
+
 /** SDS Connection State **/
 let ActiveConnection = false;
 
@@ -120,18 +139,18 @@ const SDS_ERROR_CMD_NOT_RECOGNIZED = 83;
 const LOGIN_TAGS_LIST = {
     "Username": {
         address: "Username",
-        dataType: "string",
+        dataType: data_types.STRING,
         readOnly: false
     },
     "Password": {
         address: "Password",
-        dataType: "string",
+        dataType: data_types.STRING,
         readOnly: false
     },
     // Writes to this tag will force a relogin of the SDS interface
     "Relogin": {
         address: "Relogin",
-        dataType: "boolean",
+        dataType: data_types.BOOLEAN,
         readOnly: false
     }
 }
@@ -140,7 +159,7 @@ const SYSTEM_TAGS_LIST = {
     // Monitor the Transaction ID from the messages
     "TransactionID": {
         address: "TransactionID",
-        dataType: "word",
+        dataType: data_types.WORD,
         readOnly: true
     },
     ...LOGIN_TAGS_LIST
@@ -152,37 +171,37 @@ const PREDEF_TAGS_LIST = {
     "GrossWeight": {
         class: "wt",
         attribute: "01",
-        dataType: "float",
+        dataType: data_types.FLOAT,
         readOnly: true
     }, 
     "NetWeight": {
         class: "wt",
         attribute: "02",
-        dataType: "float",
+        dataType: data_types.FLOAT,
         readOnly: true
     }, 
     "TareWeight": {
         class: "ws",
         attribute: "10",
-        dataType: "float",
+        dataType: data_types.FLOAT,
         readOnly: true,
     },
     "Units": {
         class: "wt",
         attribute: "03",
-        dataType: "string",
+        dataType: data_types.STRING,
         readOnly: true,
     },
     "ScaleID": {
         class: "cs",
         attribute: "03",
-        dataType: "string",
+        dataType: data_types.STRING,
         readOnly: true,
     },
     "ScaleMode": {
         class: "ws",
         attribute: "01",
-        dataType: "string",
+        dataType: data_types.STRING,
         readOnly: true,
     }
 }
@@ -212,7 +231,7 @@ const TAG_TYPE_ADDRESS = /(read|callback)/;
 
 const LOGGING_LEVEL_TAG = {
     address: "LoggingLevel",
-    dataType: "word",
+    dataType: data_types.WORD,
     readOnly: false,
 }
 const STD_LOGGING = 0;
@@ -297,7 +316,7 @@ function onValidateTag(info) {
     // Check for valid address formats
     if (getSystemRegEx().test(info.tag.address)) {
         // Tag is a System Tag
-        log(`onValidateTag - addressData: ${JSON.stringify(addressData)}`, DEBUG_LOGGING)
+        log(`onValidateTag - System addressData: ${JSON.stringify(addressData)}`, DEBUG_LOGGING)
 
         // Fix the data type to the correct one
         if (addressData.dataType !== dataType){
@@ -314,7 +333,7 @@ function onValidateTag(info) {
     }
     else if (getPredefRegEx().test(info.tag.address)) {
         // Tag is a predefined data tag
-        log(`onValidateTag - addressData: ${JSON.stringify(addressData)}`, DEBUG_LOGGING)
+        log(`onValidateTag - Predefined addressData: ${JSON.stringify(addressData)}`, DEBUG_LOGGING)
 
         // Fix the data type to the correct one
         if (addressData.dataType !== dataType){
@@ -331,11 +350,11 @@ function onValidateTag(info) {
     }
     else if (SDSRegex.test(info.tag.address)) {
         // Tag is SDS raw address format
-        log(`onValidateTag - addressData: ${JSON.stringify(addressData)}`, DEBUG_LOGGING)
+        log(`onValidateTag - SDS addressData: ${JSON.stringify(addressData)}`, DEBUG_LOGGING)
 
         // Fix the data type to string if set to Default
-        if (dataType === "Default"){
-            info.tag.dataType = "string"
+        if (dataType === data_types.DEFAULT){
+            info.tag.dataType = data_types.STRING
         }
         info.tag.valid = true;
     }
@@ -364,16 +383,9 @@ function onTagsRequest(info) {
     log(`onTagsRequest - info: ${JSON.stringify(info)}`, VERBOSE_LOGGING)
 
     // Ensure that tags exist in the request before proceeding
-    if (!info.hasOwnProperty("tags")) {
-        log("CATCH********************************************", DEBUG_LOGGING)
-        log(`onTagsRequest - Tag Address in request did not exist. info: ${JSON.stringify(info)}`, DEBUG_LOGGING)
-        return {action: ACTIONCOMPLETE}
-    }
-    // Verifies if Tag is provided, moves on if it is not received
-    if (info.tags.length === 0){
-        log("CATCH********************************************", DEBUG_LOGGING)
-        log(`onTagsRequest - Tag Address in request did not exist. info: ${JSON.stringify(info)}`, DEBUG_LOGGING)
-        return {action: ACTIONCOMPLETE}
+    let check = checkTagExists(info);
+    if(check !== true) {
+        return check
     }
     
     // Currently only will receive one tag at a time
@@ -447,15 +459,15 @@ function onData(info) {
 
     // Check to see if a tag response is expected from the driver
     if (info.hasOwnProperty("tags")) {
-        if (info.tags.length !== 0) {
+        // Ensure that tags exist in the request before proceeding
+        let check = checkTagExists(info);
+        if (check) {
             tag = info.tags[0];
             addressData = new SDSAddress(info.tags[0]);
             log(`addressData: ${JSON.stringify(addressData)}`, DEBUG_LOGGING)
         }
         else {
-            log("CATCH********************************************", DEBUG_LOGGING)
-            log(`onData - Tag Address in request did not exist. info: ${JSON.stringify(info)}`, DEBUG_LOGGING)
-            return {action: ACTIONCOMPLETE}
+            return check
         }
     }
     
@@ -509,6 +521,7 @@ function onData(info) {
                 ActiveLogin = true;
                 Access_State = SDS_ACCESS_OK;
 
+                log(`STATUS: Login to SDS Successful`)
                 // Verify if a tag request was part of the login event
                 if (tag !== undefined){
                     if (info.type === WRITE){
@@ -823,6 +836,29 @@ function ParseFloat(float, sta){
 }
 
 /**
+ * Quick check to ensure driver provides tags list.
+ * 
+ * @param {Object} info 
+ * @returns Return action if failed or true if found
+ */
+ function checkTagExists(info) {
+    if (!info.hasOwnProperty("tags")) {
+        log("CATCH********************************************", DEBUG_LOGGING)
+        log(`onTagsRequest - Tag Address in request did not exist. info: ${JSON.stringify(info)}`, DEBUG_LOGGING)
+        return {action: ACTIONCOMPLETE}
+    }
+    // Verifies if Tag is provided, moves on if it is not received
+    else if (info.tags.length === 0){
+        log("CATCH********************************************", DEBUG_LOGGING)
+        log(`onTagsRequest - Tag Address in request did not exist. info: ${JSON.stringify(info)}`, DEBUG_LOGGING)
+        return {action: ACTIONCOMPLETE}
+    }
+    else {
+        return true
+    }
+}
+
+/**
  * Object to store connection info.
  */
 class SDSConnect {
@@ -948,10 +984,10 @@ function commandStringFromEnum (command) {
  * @returns Value to update Tag
  */
 function updateTagValue (tag, value) {
-    if (tag.dataType.toLowerCase() === 'string') {
+    if (tag.dataType === data_types.STRING) {
         return value;
     }
-    else if (tag.dataType.toLowerCase() === 'float' || tag.dataType.toLowerCase() === 'double' ){
+    else if (tag.dataType === data_types.FLOAT || tag.dataType === data_types.DOUBLE ){
         return parseFloat(value)
     }
     else {
@@ -966,8 +1002,8 @@ function updateTagValue (tag, value) {
  */
 
 function validateLoggingTag(tag) {
-    if (tag.dataType === "Default"){
-        tag.dataType = "word"
+    if (tag.dataType === data_types.DEFAULT){
+        tag.dataType = data_types.WORD
     }
     tag.readOnly = false;
     tag.valid = true;
