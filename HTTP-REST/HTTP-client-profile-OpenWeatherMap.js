@@ -14,7 +14,7 @@
  * 
  * Developed on Kepware Server version 6.11, UDD V2.0
  * 
- * Version:     0.1.0
+ * Version:     0.1.1
 ******************************************************************************/
 /**
  * @typedef {string} MessageType - Type of communication "Read", "Write".
@@ -77,11 +77,31 @@ const ACTIONFAILURE = "Fail"
 const READ = "Read"
 const WRITE = "Write"
 
+// Global variable for all Kepware supported data_types
+const data_types = {
+    DEFAULT: "Default",
+    STRING: "String", 
+    BOOLEAN: "Boolean", 
+    CHAR: "Char",
+    BYTE: "Byte",
+    SHORT: "Short",
+    WORD: "Word",
+    LONG: "Long",
+    DWORD: "DWord",
+    FLOAT: "Float",
+    DOUBLE: "Double",
+    BCD: "BCD",
+    LBCD: "LBCD",
+    LLONG: "LLong",
+    QWORD: "QWord" 
+}
+
 /** HTTP Global variables */
-const READTYPE = "GET"
-const HTTP_HEADER_TERMINATOR = '\r\n'
-const CHUNKED_TERMINATOR = '\r\n'
-var response_header = {}
+const METHOD = {
+    GET: 'GET',
+    POST: 'POST',
+}
+var http_request = null
 var http_response = null
 
 /**
@@ -92,7 +112,7 @@ var http_response = null
 
  const LOGGING_LEVEL_TAG = {
     address: "LoggingLevel",
-    dataType: "word",
+    dataType: data_types.WORD,
     readOnly: false,
 }
 const STD_LOGGING = 0;
@@ -123,24 +143,6 @@ log = function (msg, level = STD_LOGGING) {
     }
 }
 
-// Global variable for all Kepware supported data_types
-const data_types = {
-    DEFAULT: "Default",
-    STRING: "String", 
-    BOOLEAN: "Boolean", 
-    CHAR: "Char",
-    BYTE: "Byte",
-    SHORT: "Short",
-    WORD: "Word",
-    LONG: "Long",
-    DWORD: "DWord",
-    FLOAT: "Float",
-    DOUBLE: "Double",
-    BCD: "BCD",
-    LBCD: "LBCD",
-    LLONG: "LLong",
-    QWORD: "QWord" 
-}
 
 
 /**
@@ -275,38 +277,30 @@ function onTagsRequest(info) {
 
     switch(info.type){
         case READ:
-            // Build the request as a string
-            let appId = "{Update API Key}";  // API key
-            // Host information
-            let host = "api.openweathermap.org"; // IP address of REST 
-            let port = "80"
+            http_request = new HttpRequest();
 
-            let request = ""
-   
-            if(READTYPE == "GET"){
-                // API that uses teh One Call API 1.0 from OpenWeatherMap.org
-                let lat = "43.65" // Latitude of location
-                let lon = "-70.25" // Longitude of location 
-                let abs_path = `/data/2.5/onecall?lat=${lat}&lon=${lon}&appid=${appId}`
-                request = `${READTYPE} ${abs_path} HTTP/1.1${HTTP_HEADER_TERMINATOR}`;
-                request += `Host: ${host}:${port}${HTTP_HEADER_TERMINATOR}`;
-                request += `Accept: application/json${HTTP_HEADER_TERMINATOR}`;
-                request += HTTP_HEADER_TERMINATOR;
-            }
-            else if (READTYPE == "POST"){
-                // API Does not support POST commands
-                return {action: ACTIONFAILURE}
-            }
-            else{
-                // Error State
-                return {action: ACTIONFAILURE}
+            // API that uses the One Call API 1.0 from OpenWeatherMap.org
+            let appId = "{API KEY}";  // API key
+            let lat = "43.65" // Latitude of location
+            let lon = "-70.25" // Longitude of location 
+            let rel_path = `/data/2.5/onecall?lat=${lat}&lon=${lon}&appid=${appId}`;
+            
+            http_request.host = "api.openweathermap.org"; 
+            http_request.port = 80;
+            http_request.method = METHOD.GET;
+            http_request.path = rel_path;
+
+            let request = http_request.buildRequest()
+            if (!request) {
+                log(`ERROR: onTagRequest - http_request build failed for "${info.tags[0].address}"`)
+                return { action: ACTIONFAILURE }
             }
             
             let readFrame = stringToBytes(request);
             return {action: ACTIONRECEIVE, data: readFrame};
         case WRITE:
             // Writes are not built into example/API
-            log(`ERROR: onTagRequest - Write command for address "${info.tags[0].address}" is not supported.`)
+            log(`ERROR: onTagRequest - Write command for address "${info.tags[0].address}" is not supported`)
             return {action: ACTIONFAILURE};
         default:
             log(`ERROR: onTagRequest - Unexpected error. Command type unknown: ${info.type}`);
@@ -339,71 +333,13 @@ function onData(info) {
         stringResponse += String.fromCharCode(info.data[i]);
     }
 
-    // extract HTTP response header
-    if (Object.keys(http_response.response_header).length === 0) {
-        http_response.response_header = parseHTTPHeader(stringResponse.substring(0, 
-            stringResponse.indexOf(HTTP_HEADER_TERMINATOR+HTTP_HEADER_TERMINATOR)));
-        http_response.unprocessed = stringResponse.slice(stringResponse.indexOf(HTTP_HEADER_TERMINATOR+
-            HTTP_HEADER_TERMINATOR)+(HTTP_HEADER_TERMINATOR+HTTP_HEADER_TERMINATOR).length)
-        log(`onData - HTTP Header Recieved: ${JSON.stringify(http_response.response_header)}`, VERBOSE_LOGGING)
-    }
-    else {
-        // If the header has already been processed on a previous chunk, treat as payload data
-        http_response.unprocessed = http_response.unprocessed.concat(...stringResponse)
-    }
+    // Process HTTP payload message. When the result is true, this indicates that the complete HTTP message has been processed
+    // Otherwise a return object to send back to the UDD driver is returned to either get more of the HTTP paylod or indicate a failure
+    let status = http_response.processHTTPmsg(stringResponse)
+    if (status !== true) { return status }
 
-    // confirm if message is using HTTP chunking and process payload as chunks
-    if ('Transfer-Encoding'.toLowerCase() in http_response.response_header) {
-        switch (http_response.response_header['Transfer-Encoding'.toLowerCase()]) {
-            case 'chunked':
-                log(`Unprocessed Length: ${http_response.unprocessed.length}`)
-                let result = parseChunkedMsg(http_response.unprocessed);
-                http_response.msg = http_response.msg.concat(...result.msg);
-                log(`Processed Length: ${http_response.msg.length}`)
-                if (!result.complete) {
-                    http_response.unprocessed = result.leftover
-                    log(`Unprocessed (post parse) Length: ${http_response.unprocessed.length}`)
-                    return { action: ACTIONRECEIVE }
-                }
-                break;
-            default:
-                log(`ERROR: onData - Not supported Transfer-Encoding type: ${http_response.response_header
-                    ['Transfer-Encoding'.toLowerCase()]}`)
-        }
-    }
-    // Confirm if full message payload has been received for non-chunk encoded HTTP payloads
-    else if ('Content-Length'.toLowerCase() in http_response.response_header) {
-        // Compare data length to Content-Length. If Content-Length is greater then the total received data
-        // need to listen for more data from driver
-        log(`onData - Content-Length Value: ${http_response.response_header['Content-Length'.toLowerCase()]}`, DEBUG_LOGGING)
-        log(`onData - Current Msg Length: ${http_response.msg.length}`, DEBUG_LOGGING)
-        log(`onData - New Data Length: ${http_response.unprocessed.length}`, DEBUG_LOGGING)
-        if (http_response.response_header['Content-Length'.toLowerCase()] > http_response.msg.length + http_response.unprocessed.length) {
-            http_response.msg = http_response.msg.concat(...http_response.unprocessed)
-            http_response.unprocessed = ''
-            return { action: ACTIONRECEIVE }
-        }
-        else if (http_response.response_header['Content-Length'.toLowerCase()] == http_response.msg.length + http_response.unprocessed.length) {
-            http_response.msg = http_response.msg.concat(...http_response.unprocessed)
-        }
-        else {
-            // FAILURE
-            log(`ERROR: onData - Received (${http_response.msg.length + http_response.unprocessed.length} bytes) more then Content-Length 
-                value: ${http_response.response_header['Content-Length'.toLowerCase()]}`)
-            
-            // reset cache of http_response info
-            http_response.reset()
-            return { action: ACTIONFAILURE }
-        }
-    }
-    // Unsupported format - Unknown message payload type/length to parse
-    else {
-        log(`ERROR: onData - Unknown Transfer-Encoding/Content-Length in HTTP header: ${JSON.stringify(http_response.response_header)}`)
-        http_response.reset()
-        return { action: ACTIONFAILURE }
-    }
-
-    // After receiving full message, verify response code
+    
+    // After receiving full message, verify/handle response code
     if(http_response.getResponseCode() !== 200) {
         // FAILURE - Non successful response from HTTP server
         log(`ERROR: onData - Received HTTP Code ${http_response.getResponseCode()}; Message: ${JSON.stringify(http_response.msg)}`)
@@ -470,91 +406,258 @@ function onData(info) {
     return byteArray;
 }
 
-/**
- * Class to create HttpResponse object used to process multipacket HTTP messages
- * and provide easy access to HTTP related data
- */
-class HttpResponse {
+/*****************************************************************************************************
+ * Class to create HttpRequest object used to create HTTP request messages
+ * and provide easy methods to build the payload
+ * 
+ * Properties:
+ * @param {String} path - relative path for URL - defaults to '/'
+ * @param {String} method - HTTP method to use [GET, POST]
+ * @param {String} host - host to connect to - IP/HOST/DNS NAME
+ * @param {Number} port - port to connect
+ * @param {Object} headers - JSON Object of HTTP headers to configure 
+ * 
+ * Methods:
+ * @method buildRequest - Builds the necessary HTTP request message based on the properties configured.
+ *****************************************************************************************************/
+ class HttpRequest {
+    #HEADERS = {
+        CONTENTTYPE: 'Content-Type',
+        HOST: 'Host',
+        CONNECTION: 'Connection',
+        CONTENTLENGTH: 'Content-Length'
+    }
+    #HTTP_HEADER_TERMINATOR = '\r\n'
     constructor () {
-        this.response_header = {}
+        this.path = '/'
+        this.headers = {}
+        this.method = null
+        this.host = null
+        this.port = null
+    }
+    /**
+     * Builds the necessary HTTP request message based on the properties configured.
+     * @param {String} payload 
+     * @returns {String} complete message to send
+     */
+    buildRequest(payload = null) {
+        // Check to see if required parameters have been updated
+        if (this.method === null | this.host === null | this.port === null) {
+            log(`HttpRequest.buildRequest - parameters have not been set correctly. method: ${this.method} | host: ${this.host} | port: ${this.port}`, DEBUG_LOGGING)
+            return false
+        }
+
+        let header_copy = {...this.headers}
+        // Builds start-line of message
+        let request =  `${this.method} ${this.path} HTTP/1.1${this.#HTTP_HEADER_TERMINATOR}`;
+
+        // Builds message headers
+        // Unless specified Content-Type will default to application/json
+        if (header_copy.hasOwnProperty(this.#HEADERS.CONTENTTYPE)) {
+            request += `${this.#HEADERS.CONTENTTYPE}: ${header_copy[this.#HEADERS.CONTENTTYPE]}${this.#HTTP_HEADER_TERMINATOR}`;
+            delete header_copy[this.#HEADERS.CONTENTTYPE]
+        }
+        else {
+            request += `${this.#HEADERS.CONTENTTYPE}: application/json${this.#HTTP_HEADER_TERMINATOR}`;
+        }
+        // Add Host header
+        request += `${this.#HEADERS.HOST}: ${this.host}:${this.port}${this.#HTTP_HEADER_TERMINATOR}`;
+
+        // Unless specified Connection will default to keep-alive
+        if (header_copy.hasOwnProperty(this.#HEADERS.CONNECTION)) {
+            request += `${this.#HEADERS.CONNECTION}: ${header_copy[this.#HEADERS.CONNECTION]}${this.#HTTP_HEADER_TERMINATOR}`
+            delete header_copy[this.#HEADERS.CONNECTION]
+        }
+        else{
+            request += `${this.#HEADERS.CONNECTION}: keep-alive${this.#HTTP_HEADER_TERMINATOR}`;
+        }
+
+        // Add rest of headers provided
+        for (const key in header_copy) {
+            // don't overwrite certain headers
+            if (Object.values(this.#HEADERS).indexOf(key) === -1){
+                request += `${key}: ${header_copy[key]}${this.#HTTP_HEADER_TERMINATOR}`
+            }
+        }
+        // Add and calculate Content-Length header
+        let length = 0
+        if (payload !== null) {
+            length = payload.length
+        }
+        request += `${this.#HEADERS.CONTENTLENGTH}: ${length}${this.#HTTP_HEADER_TERMINATOR}`;
+        request += this.#HTTP_HEADER_TERMINATOR;
+
+        // Adds message body of payload if provided
+        if (payload !== null) {
+            request += payload 
+        }
+        log(`HttpRequest.buildRequest - Request: ${request}`, VERBOSE_LOGGING)
+        return request;
+    }
+}
+
+
+
+/**
+ * Class to create HttpResponse object used to process HTTP messages
+ * and provide easy access to HTTP related data
+ * 
+ * Handles data processing of single and multi-packet responses, supporting responses
+ * identifeid as chunked or content lengths beyond a single transport payload size.
+ */
+ class HttpResponse {
+    #HTTP_HEADER_TERMINATOR = '\r\n'
+    #CHUNKED_TERMINATOR = '\r\n'
+    constructor () {
+        this.headers = {}
         this.msg = ''
         this.unprocessed = ''
     }
     reset() {
-        this.response_header = {}
+        this.headers = {}
         this.msg = ''
         this.unprocessed = ''
     }
     getResponseCode() {
-        return this.response_header['response_code']
+        return this.headers['response_code']
     }
-}
-
-
-/**
- * Parses HTTP Header
- * @param {string} msg 
- * @returns {object} JSON Object of Header parameters
- */
-function parseHTTPHeader(msg) {
-    let header = {}
-    let fields = msg.split(HTTP_HEADER_TERMINATOR)
-
-    // Parse status field of HTTP header to access response code and reason information
-    let regex = /^(?:HTTP\/)\d[.]\d[ ]\d+[ ]\w+$/
-    if(regex.test(fields[0])) {
-        let status_split = fields[0].split(/[ ]/)
-        header['version'] = status_split[0];
-        header['response_code'] = parseInt(status_split[1]);
-        header['reason'] = status_split[2];
-    }
-    else {
-        header['version'] = fields[0]
-    }
-
-    // Parse rest of header into keys/values
-    fields.slice(1, fields.length).forEach((val) => {
-        let element = val.split(': ')
-        header[element[0].toLowerCase()] = element[1].trim().toLowerCase();
-    });
-    return header
-}
-
-/**
- * Parse Msg chunk and determine if more data is needed to complete the chunks
- * Used for Chunked Transport-Encoding HTTP responses
- * @param {string} msg 
- * @returns {object} Object with following keys:
- * 
- * complete: Is chunking processing complete
- * 
- * msg: new payload data that has been processed to assemble in final HTTP response
- * 
- * leftover: unprocessed data chunk that needs to be assembled with more data
- */
-function parseChunkedMsg(msg) {
-    let result = ''
-    while(msg.length > 0) {
-        let chunk_header = msg.slice(0, msg.indexOf(CHUNKED_TERMINATOR))
-        let chunk_size = parseInt(chunk_header, 16);
-        log(`parseChunkedMsg - chunk_size: ${chunk_size}`)
-        if (chunk_size === 0) {
-            msg = msg.slice(msg.indexOf(CHUNKED_TERMINATOR+CHUNKED_TERMINATOR)+(CHUNKED_TERMINATOR+CHUNKED_TERMINATOR).length)
-        }
-        // Need to wait for more data to be provided from driver buffer
-        else if (chunk_size > msg.length) {
-            return { complete: false, msg: result, leftover: msg }
+    /**
+     * 
+     * @param {String} stringResponse 
+     * @returns {}
+     */
+    processHTTPmsg(stringResponse) {
+        // extract HTTP response header
+        if (Object.keys(http_response.headers).length === 0) {
+            http_response.headers = this.#parseHTTPHeader(stringResponse.substring(0, 
+                stringResponse.indexOf(this.#HTTP_HEADER_TERMINATOR+this.#HTTP_HEADER_TERMINATOR)));
+            http_response.unprocessed = stringResponse.slice(stringResponse.indexOf(this.#HTTP_HEADER_TERMINATOR+
+                this.#HTTP_HEADER_TERMINATOR)+(this.#HTTP_HEADER_TERMINATOR+this.#HTTP_HEADER_TERMINATOR).length)
+            log(`onData - HTTP Header Received: ${JSON.stringify(http_response.headers)}`, VERBOSE_LOGGING)
         }
         else {
-            result = result.concat(...msg.substr(msg.indexOf(CHUNKED_TERMINATOR)+CHUNKED_TERMINATOR.length,chunk_size))
-            log(`${msg}`)
-            log(`Result start: ${result.slice(0,10)}`)
-            // TODO: Verify Terminator before moving on. This currently assumes Terminator is last bytes before next chunk.
-            msg = msg.slice(msg.indexOf(CHUNKED_TERMINATOR)+CHUNKED_TERMINATOR.length + chunk_size + CHUNKED_TERMINATOR.length)
-            log(`Msg start: ${msg.slice(0,10)}`)
+            // If the header has already been processed on a previous chunk, treat as payload data
+            http_response.unprocessed = http_response.unprocessed.concat(...stringResponse)
         }
+
+        // confirm if message is using HTTP chunking and process payload as chunks
+        if ('Transfer-Encoding'.toLowerCase() in http_response.headers) {
+            switch (http_response.headers['Transfer-Encoding'.toLowerCase()]) {
+                case 'chunked':
+                    log(`Unprocessed Length: ${http_response.unprocessed.length}`, DEBUG_LOGGING)
+                    let result = this.#parseChunkedMsg(http_response.unprocessed);
+                    http_response.msg = http_response.msg.concat(...result.msg);
+                    log(`Processed Length: ${http_response.msg.length}`, DEBUG_LOGGING)
+                    if (!result.complete) {
+                        http_response.unprocessed = result.leftover
+                        log(`Unprocessed (post parse) Length: ${http_response.unprocessed.length}`, DEBUG_LOGGING)
+                        return { action: ACTIONRECEIVE }
+                    }
+                    break;
+                default:
+                    log(`ERROR: onData - Not supported Transfer-Encoding type: ${http_response.headers
+                        ['Transfer-Encoding'.toLowerCase()]}`)
+                    return { action: ACTIONFAILURE }
+            }
+        }
+        // Confirm if full message payload has been received for non-chunk encoded HTTP payloads
+        else if ('Content-Length'.toLowerCase() in http_response.headers) {
+            // Compare data length to Content-Length. If Content-Length is greater then the total received data
+            // need to listen for more data from driver
+            log(`onData - Content-Length Value: ${http_response.headers['Content-Length'.toLowerCase()]}`, DEBUG_LOGGING)
+            log(`onData - Current Msg Length: ${http_response.msg.length}`, DEBUG_LOGGING)
+            log(`onData - New Data Length: ${http_response.unprocessed.length}`, DEBUG_LOGGING)
+            if (http_response.headers['Content-Length'.toLowerCase()] > http_response.msg.length + http_response.unprocessed.length) {
+                http_response.msg = http_response.msg.concat(...http_response.unprocessed)
+                http_response.unprocessed = ''
+                return { action: ACTIONRECEIVE }
+            }
+            else if (http_response.headers['Content-Length'.toLowerCase()] == http_response.msg.length + http_response.unprocessed.length) {
+                http_response.msg = http_response.msg.concat(...http_response.unprocessed)
+            }
+            else {
+                // FAILURE
+                log(`ERROR: onData - Received (${http_response.msg.length + http_response.unprocessed.length} bytes) more then Content-Length 
+                    value: ${http_response.headers['Content-Length'.toLowerCase()]}`)
+                
+                // reset cache of http_response info
+                http_response.reset()
+                return { action: ACTIONFAILURE }
+            }
+        }
+        // Unsupported format - Unknown message payload type/length to parse
+        else {
+            log(`ERROR: onData - Unknown Transfer-Encoding/Content-Length in HTTP header: ${JSON.stringify(http_response.headers)}`)
+            http_response.reset()
+            return { action: ACTIONFAILURE }
+        }
+
+        return true;
+
     }
-    return { complete: true, msg: result }
+    /**
+     * Parses HTTP Header
+     * @param {string} msg 
+     * @returns {object} JSON Object of Header parameters
+     */
+    #parseHTTPHeader(msg) {
+        let header = {}
+        let fields = msg.split(this.#HTTP_HEADER_TERMINATOR)
+
+        // Parse status field of HTTP header to access response code and reason information
+        let regex = /^(?:HTTP\/)\d[.]\d[ ]\d+[ ]\w+$/
+        if(regex.test(fields[0])) {
+            let status_split = fields[0].split(/[ ]/)
+            header['version'] = status_split[0];
+            header['response_code'] = parseInt(status_split[1]);
+            header['reason'] = status_split[2];
+        }
+        else {
+            header['version'] = fields[0]
+        }
+
+        // Parse rest of header into keys/values
+        fields.slice(1, fields.length).forEach((val) => {
+            let element = val.split(': ')
+            header[element[0].toLowerCase()] = element[1].trim().toLowerCase();
+        });
+        return header
+    }
+
+    /**
+     * Parse Msg chunk and determine if more data is needed to complete the chunks
+     * Used for Chunked Transport-Encoding HTTP responses
+     * @param {string} msg 
+     * @returns {object} Object with following keys:
+     * 
+     * complete: Is chunking processing complete
+     * 
+     * msg: new payload data that has been processed to assemble in final HTTP response
+     * 
+     * leftover: unprocessed data chunk that needs to be assembled with more data
+     */
+    #parseChunkedMsg(msg) {
+        let result = ''
+        while(msg.length > 0) {
+            let chunk_header = msg.slice(0, msg.indexOf(this.#CHUNKED_TERMINATOR))
+            let chunk_size = parseInt(chunk_header, 16);
+            log(`parseChunkedMsg - chunk_size: ${chunk_size}`, DEBUG_LOGGING)
+            if (chunk_size === 0) {
+                msg = msg.slice(msg.indexOf(this.#CHUNKED_TERMINATOR+this.#CHUNKED_TERMINATOR)+(this.#CHUNKED_TERMINATOR+this.#CHUNKED_TERMINATOR).length)
+            }
+            // Need to wait for more data to be provided from driver buffer
+            else if (chunk_size > msg.length) {
+                return { complete: false, msg: result, leftover: msg }
+            }
+            else {
+                result = result.concat(...msg.substr(msg.indexOf(this.#CHUNKED_TERMINATOR)+this.#CHUNKED_TERMINATOR.length,chunk_size))
+                // TODO: Verify Terminator before moving on. This currently assumes Terminator is last bytes before next chunk.
+                msg = msg.slice(msg.indexOf(this.#CHUNKED_TERMINATOR)+this.#CHUNKED_TERMINATOR.length + chunk_size + this.#CHUNKED_TERMINATOR.length)
+            }
+        }
+        return { complete: true, msg: result }
+    }
+
 }
 
 /**
