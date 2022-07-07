@@ -1,6 +1,6 @@
 # Data Pre-processing with IoT Gateway
 
-These profiles provide templates to that can preprocess data from within Kepware. It profile creates an HTTP client to access the IoT Gateway REST server and read tag data in Kepware. It then processes the values and updates tags within the UDD driver. The HTTP functionality is from the [HTTP-REST](../../HTTP-REST/) examples.
+These profiles provide templates to that can preprocess data from within Kepware. The profile architecture creates a HTTP client to access the IoT Gateway REST server and read tag data in Kepware. It then processes the values and updates tags within the UDD driver. The HTTP functionality is from the [HTTP-REST](../../HTTP-REST/) examples.
 
 This data flow is useful for scenarios where caluclations or data processing needs can't be accomplished in Kepware's Advanced Tags Plug-in. See diagram below for data flow:
 
