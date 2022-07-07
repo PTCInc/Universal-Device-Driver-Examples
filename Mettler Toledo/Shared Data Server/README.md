@@ -1,6 +1,6 @@
 # Mettler Toledo - Shared Data Server Profile
 
-This profile uses the Shared Data Server (SDS) interface available on select Mettler Toledo scale indicators. This interface allows for a user to read, subscribe and write to the scale for various configuration and data values.
+This profile uses the Shared Data Server (SDS) interface available on select Mettler Toledo scale terminals or indicators. This interface allows for a user to read, subscribe and write to the scale terminal for various configuration and data values.
 
 This profile was developed while connecting to an IND780 model indicator, though it should work with little to no modification for other indicators that use the Shared Data Server interface. Please see Mettler Toledo documentation for complete details on addressing and commands.
 
@@ -66,7 +66,7 @@ The following addresses can be used to manage login and other various data.
 
 ## Models
 
-The profile was developed against an IND780 but below is a list of other models that support SDS according to Mettler Toledo documentation.
+The profile was developed against an IND780 but below is a list of other terminal models that support SDS according to Mettler Toledo documentation.
 
 |   Model  |    Product Page    |   SDS Manual  |
 | :----------:  | :----------:  | :----------:  |
