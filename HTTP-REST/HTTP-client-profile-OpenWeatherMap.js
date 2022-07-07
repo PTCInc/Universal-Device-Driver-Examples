@@ -14,7 +14,7 @@
  * 
  * Developed on Kepware Server version 6.11, UDD V2.0
  * 
- * Version:     0.1.1
+ * Version:     0.1.2
 ******************************************************************************/
 /**
  * @typedef {string} MessageType - Type of communication "Read", "Write".
@@ -321,10 +321,6 @@ function onTagsRequest(info) {
 function onData(info) {
     log(`onValidateTag - info: ${JSON.stringify(info.tags)}`, DEBUG_LOGGING)
 
-    // Writes are not permitted
-    if (info.type === WRITE){
-        return {action: ACTIONFAILURE}  // tags field not needed in "Failure" case
-    }
     let tags = info.tags;
 
     // Convert the response to a string
@@ -498,13 +494,20 @@ function onData(info) {
 
 
 
-/**
+/*****************************************************************************************************
  * Class to create HttpResponse object used to process HTTP messages
  * and provide easy access to HTTP related data
  * 
  * Handles data processing of single and multi-packet responses, supporting responses
  * identifeid as chunked or content lengths beyond a single transport payload size.
- */
+ * 
+ * * Properties:
+ * @param {Object} headers - JSON object of the HTTP headers from the response message
+ * @param {String} msg - payload or message body from the response message
+ * 
+ * Methods:
+ * @method processHTTPmsg - processes HTTP message to determine if the complete message is received or not.
+ *****************************************************************************************************/
  class HttpResponse {
     #HTTP_HEADER_TERMINATOR = '\r\n'
     #CHUNKED_TERMINATOR = '\r\n'
@@ -522,9 +525,11 @@ function onData(info) {
         return this.headers['response_code']
     }
     /**
+     * Method used to process the HTTP response data that is received from the UDD driver.
      * 
-     * @param {String} stringResponse 
-     * @returns {}
+     * @param {String} stringResponse - string value from the message data received from the UDD driver 
+     * @returns {true | action response} - will return true if the complete HTTP message has been received or 
+     *                                      actions to listen for more data from the UDD driver
      */
     processHTTPmsg(stringResponse) {
         // extract HTTP response header
