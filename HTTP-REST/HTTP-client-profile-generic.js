@@ -102,49 +102,15 @@ var http_request = null
 var http_response = null
 
 /**
- * Logging Level System tag - control logging level from client application
- * This can be used to avoid logging verbose SDS protocol messages unless 
- * needed for debugging
- */
+ * Validate an address.
+ *
+ * @param {object}  info          - Object containing the function arguments.
+ * @param {Tag}     info.tag      - Single tag.
+ *
+ * @return {OnValidateTagResult}  - Single tag with a populated '.valid' field set.
+ *
+ * */
 
- const LOGGING_LEVEL_TAG = {
-    address: "LoggingLevel",
-    dataType: data_types.WORD,
-    readOnly: false,
-}
-const STD_LOGGING = 0;
-const VERBOSE_LOGGING = 1;
-const DEBUG_LOGGING = 2;
-// Sets initial Logging Level
-const LOGGING_LEVEL = STD_LOGGING;
-
-/** Captures the global log function so that it can be wrapped **/
-let originalLogFunction = log;
-log = function (msg, level = STD_LOGGING) {
-    switch (readFromCache(LOGGING_LEVEL_TAG.address).value) {
-        case VERBOSE_LOGGING:
-            if (level <= VERBOSE_LOGGING) {
-                originalLogFunction(msg);
-            }
-            break;
-        case DEBUG_LOGGING:
-            if (level <= DEBUG_LOGGING) {
-                originalLogFunction(msg);
-            }
-            break;
-        default:
-            if (level == STD_LOGGING) {
-                originalLogFunction(msg);
-            } 
-            break;
-    }
-}
-
-/**
- * Retrieve driver metadata.
- * 
- * @return {OnProfileLoadResult}  - Driver metadata.
- */
  function onProfileLoad() {
 
     // Initialized our internal cache
@@ -164,24 +130,8 @@ log = function (msg, level = STD_LOGGING) {
     return { version: VERSION, mode: MODE };
 }
 
-/**
- * Validate an address.
- *
- * @param {object}  info          - Object containing the function arguments.
- * @param {Tag}     info.tag      - Single tag.
- *
- * @return {OnValidateTagResult}  - Single tag with a populated '.valid' field set.
- *
- * */
 function onValidateTag(info) {
     
-    // Check if it's LoggingLevel tag
-    if (info.tag.address === LOGGING_LEVEL_TAG.address) {
-        info.tag = validateLoggingTag(info.tag)
-        log('onValidateTag - address "' + info.tag.address + '" is valid.', DEBUG_LOGGING)
-        return info.tag;
-    }
-
     /*
      * The regular expression to compare address to.
      * ^, & Starting and ending anchors respectively. The match must occur between the two anchors
@@ -217,12 +167,7 @@ function onValidateTag(info) {
 }
 
 function onTagsRequest(info) {
-    // Check if tag is LoggingLevel, update from cached value
-    if (info.tags[0].address === LOGGING_LEVEL_TAG.address){
-        let returnAction = updateLoggingTag(info);
-        return returnAction;
-    }
-    
+
     switch(info.type){
         case READ:
             http_request = new HttpRequest();
@@ -466,20 +411,13 @@ function onData(info) {
 
 
 
-/*****************************************************************************************************
+/**
  * Class to create HttpResponse object used to process HTTP messages
  * and provide easy access to HTTP related data
  * 
  * Handles data processing of single and multi-packet responses, supporting responses
  * identifeid as chunked or content lengths beyond a single transport payload size.
- * 
- * * Properties:
- * @param {Object} headers - JSON object of the HTTP headers from the response message
- * @param {String} msg - payload or message body from the response message
- * 
- * Methods:
- * @method processHTTPmsg - processes HTTP message to determine if the complete message is received or not.
- *****************************************************************************************************/
+ */
  class HttpResponse {
     #HTTP_HEADER_TERMINATOR = '\r\n'
     #CHUNKED_TERMINATOR = '\r\n'
@@ -497,11 +435,9 @@ function onData(info) {
         return this.headers['response_code']
     }
     /**
-     * Method used to process the HTTP response data that is received from the UDD driver.
      * 
-     * @param {String} stringResponse - string value from the message data received from the UDD driver 
-     * @returns {true | action response} - will return true if the complete HTTP message has been received or 
-     *                                      actions to listen for more data from the UDD driver
+     * @param {String} stringResponse 
+     * @returns {}
      */
     processHTTPmsg(stringResponse) {
         // extract HTTP response header
@@ -654,45 +590,6 @@ function onData(info) {
     // return an array of bytes
     return byteArray;
 }
-
-/**
- * Helper Functions for Logging Tag functionality 
- */
-
-/**
- * Validate LoggingLevel tag
- * @param {Tag} tag 
- * @returns {Tag} LoggingLevel Tag validation results
- */
-
- function validateLoggingTag(tag) {
-    if (tag.dataType === data_types.DEFAULT){
-        tag.dataType = data_types.WORD
-    }
-    tag.readOnly = false;
-    tag.valid = true;
-
-    return tag
-}
-
-/**
- * Update the Logging tag to either read the value or modify the level.
- * @param {info} info 
- * @returns {OnTransactionResult} Transaction Result for LoggingLevel Tag
- */
-function updateLoggingTag(info) {
-    let value = undefined;
-    if (info.type === WRITE){
-        writeToCache(LOGGING_LEVEL_TAG.address, info.tags[0].value)
-        return {action: ACTIONCOMPLETE}
-    }
-    else {
-        value = readFromCache(LOGGING_LEVEL_TAG.address).value
-        info.tags[0].value = value;
-        return { action: ACTIONCOMPLETE, tags: info.tags};
-    }
-}
-
 
 /**
  * Search Object for value based on Tag address
