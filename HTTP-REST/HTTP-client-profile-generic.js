@@ -11,7 +11,7 @@
  * 
  * Developed on Kepware Server version 6.11, UDD V2.0
  * 
- * Version:     0.1.0
+ * Version:     0.1.1
 ******************************************************************************/
 /**
  * @typedef {string} MessageType - Type of communication "Read", "Write".
