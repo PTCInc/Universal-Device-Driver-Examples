@@ -40,8 +40,8 @@ Example JSON:
         "description": "partly sunny"
         }
         {
-        "main": "sunny",
-        "description": "mostly sunny"
+        "main": "cloudy",
+        "description": "mostly cloudy"
         }
     ]
    }
@@ -51,4 +51,4 @@ Example JSON:
 | :----------:  | :----------:  |
 | visibility | 1000 |
 | wind | {"speed": 8.38, "direction": "north"} |
-| weather[1]:main | sunny |
+| weather[1]:main | cloudy |

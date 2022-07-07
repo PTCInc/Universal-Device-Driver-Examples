@@ -4,11 +4,12 @@
  * All rights reserved.
  * 
  * Name: MT-SDS-profile.js
- * Description: Profile designed to communicate with a Mettler Toledo scale 
- * using Shared Data Server commands. The commands may be equivelant for other devivces.
- * Please refer to Mettler Toledo documentation for specific details for specific models.
+ * Description: Profile designed to communicate with a Mettler Toledo scale terminal
+ * using Shared Data Server commands.
  * 
- * Developed against a IND780 model scale
+ * Please refer to Mettler Toledo documentation for specific details for specific terminal models.
+ * 
+ * Developed against a IND780 model terminal
  * Developed on Kepware Server version 6.11, UDD V2.0
  * 
  * 
