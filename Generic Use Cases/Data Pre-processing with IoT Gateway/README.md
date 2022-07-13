@@ -13,7 +13,7 @@ This data flow is useful for scenarios where caluclations or data processing nee
 
 ## Examples
 
-### Generic Preprocess Examnple
+### Generic Preprocess Example
 
 A generic example to be used as a starting point for building a unique solution. Example implements a simple part counter based on a boolean trigger and remaps string formatted status codes to integer numeric codes based on a simple look up.
 
