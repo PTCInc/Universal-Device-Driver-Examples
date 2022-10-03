@@ -1,0 +1,64 @@
+Quick Start: CSV Parser with Kepware Universal Device Driver
+
+1- Load Kepware project file (project file already includes Javascript for Universal Device Driver)
+2- Edit the Python script for 
+----- filename and filepath variables at lines 46 and 94
+----- group-by column at line 55
+3- Manually create tags in Kepware per incoming CSV file (see below for instructions)
+4- Launch Quick Client from the Kepware Configuration tool
+5- Run the Python script (recommend using Task Scheduler for managed runtime)
+6- Create/modify/overwrite target CSV file in target directory
+7- Ensure correct values are seen for tags within Quick Client
+
+Python and Javascript (UDD Profile) notes below:
+
+Python Script Notes:
+# ----------------------------------------------------------------------------
+# Copyright (c) PTC Inc. and/or all its affiliates. All rights reserved.
+# See License.txt in the project root for license information.
+# ----------------------------------------------------------------------------
+
+# This script connects to companion Kepware Universal Device Driver profile on specified 
+# IP and TCP port and watches a target directory for a CSV file of a specific name. 
+#
+# When the CSV file created, modified or overwritten, the script parses contents and sends 
+# as plain text to a listening UDD profile.
+
+# Expects CSV formats like:
+
+#   column1,column2,column3[n]
+#   string1,p1,50
+#   string2,p2,77 
+
+# Sends the data grouped by one selected column (e.g. column2) to the 
+# configured Kepware Universal Device Driver:
+
+#   {"p1" : {column1 : "string1", column2 : "p1", column3 : "50"}, 
+#    "p2" : {column1 : "string2", column2 : "p2", column3 : "77"}}
+
+# The data can then be accessed in Kepware using the following tag syntax:
+
+#  p1.column1
+#  p2.column3
+
+# MAKE SURE TO EDIT FILEPATH AND FILENAME VARIABLES (lines 46 and 94)
+
+Javascript Notes:
+/*****************************************************************************
+ * 
+ * This file is copyright (c) 2022 PTC Inc.
+ * All rights reserved.
+ * 
+ * Name: Unsolicited TCP Parser 
+ * Description: Sets up a listening TCP server and parses expected data received 
+ * into tags. Current configuration is for comma-seperated values modeled in JSON 
+ * format by Python helper script.
+ * Version: 1.0.0
+ * 
+ * Notes: 
+ * -- Currently configured for use with Python helper script 
+ * ---- "csvfile_to_tcp_with_watchdog.py"
+ * -- If not using Python helper script, users must customize tag parsing function 
+ * ---- based on incoming TCP data
+ * 
+******************************************************************************/

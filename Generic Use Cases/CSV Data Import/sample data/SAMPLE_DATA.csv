@@ -1,0 +1,23 @@
+Date,Time,Characteristic,Nominal,Upper_Tol,Lower_Tol,Actual,Deviation
+31/05/2022,14:27:41,Machine_X_axis_temperature_Temp_Spec,9,1.25,-1.25,19.68,-0.32
+31/05/2022,14:27:41,Machine_X_axis_temperature_2_Temp_Spec,20,1.25,-1.25,19.73,-0.27
+31/05/2022,14:27:41,Machine_Y_axis_temperature_Temp_Spec,20,1.25,-1.25,19.32,-0.68
+31/05/2022,14:27:41,Machine_Y_axis_temperature_2_Temp_Spec,20,1.25,-1.25,19.5,-0.5
+31/05/2022,14:27:41,Machine_Z_axis_temperature_Temp_Spec,20,1.25,-1.25,19.61,-0.39
+31/05/2022,14:27:41,Machine_Z_axis_temperature_2_Temp_Spec,20,1.25,-1.25,19.61,-0.39
+31/05/2022,14:27:42,Machine_total_Rate_of_thermal_change_Temp_Spec,0,1,-1,0.18,0.18
+31/05/2022,14:27:42,Part_temperature_Temp_Spec,20,1,-1,19.56,-0.44
+31/05/2022,14:40:26,Bore_middle_Bore_size_tolerance,66.6815,0.0065,-0.0065,66.2892,-0.3923
+31/05/2022,14:39:46,Bore_top_Bore_size_tolerance,66.6815,0.0065,-0.0065,66.3447,-0.3368
+31/05/2022,14:41:08,Bore_bottom_Bore_size_tolerance,66.6815,0.0065,-0.0065,66.4474,-0.2341
+31/05/2022,14:43:49,Race_middle_Race_size,78.3019,0,0,78.6497,0.3478
+31/05/2022,14:43:50,Race_Cone_angle_tolerance,18.3667,0.0224,-0.0224,18.1645,-0.2021
+31/05/2022,14:43:50,Race_taper_Race_taper,0,0.0038,-0.0038,-0.0344,-0.0344
+31/05/2022,14:39:04,Top_face_Overall_height,38.265,0.165,-0.165,38.7623,0.4973
+31/05/2022,14:43:51,Bore_taper_value_Bore taper,0,0.013,-0.013,-0.1027,-0.1027
+31/05/2022,14:29:01,Line_along_left_carbide_strip_Straightness_tolerance,0,999,0,0.0018,0.0018
+31/05/2022,14:28:40,Line_along_right_carbide_strip_Straightness_tolerance,0,999,0,0.0033,0.0033
+31/05/2022,14:43:51,Fixture_face_Fixture_face_flatness,0,999,0,0,0
+31/05/2022,14:41:49,Small_rib_Small_rib_size,77.038,0.05,-0.05,77.0543,0.0163
+31/05/2022,14:43:48,Large_rib_Large_rib_size,90.526,0.05,-0.05,90.3535,-0.1725
+31/05/2022,14:43:52,Large_rib_width_LRW,6.096,0.051,-0.051,6.4798,0.3838
