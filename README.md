@@ -18,9 +18,9 @@ Example profiles for various hardware and protocol use cases can be found in thi
 
 ## Prerequisites
 
-Profiles in this repository target the UDD v2.0 design included in Thingworx Kepware Server (TKS) and KEPServerEX (KEP) v6.11 or later. Please follow the link below for a short summary of changes UDD v1.0 to UDD v2.0:
+Profiles in this repository target the UDD v2.0 design included in Thingworx Kepware Server (TKS) and KEPServerEX (KEP) v6.11 or later. Please follow the link below for a short summary of changes to upgrade from a UDD v1.0 profile to UDD v2.0 profile:
 
-[UDD 1.0 to 2.0 Upgrade 2022.docx](https://github.com/PTCInc/Universal-Device-Driver-Examples/files/9707835/UDD.1.0.to.2.0.Upgrade.2022.docx)
+[UDD v1.0 to v2.0 Upgrade Instructions](docs/UDD.1.0.to.2.0.Upgrade.docx)
 
 ## Issues
 
