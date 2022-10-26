@@ -182,7 +182,10 @@ function onProfileLoad() {
  * the types of data that can be use drastically vary. Many requests for systems that use HTTP 
  * can often return a JSON object. We can use this object to return multiple tag values.
  * 
- * Example JSON:
+ * SEE https://openweathermap.org/api/one-call-3 for JSON example of One Call API 
+ * this example uses from OpenWeatherMap
+ * 
+ * Example JSON for tag addressing discussion:
  * {
  *  "visibility": 1000,
  *  "wind": {
@@ -408,7 +411,7 @@ function onData(info) {
  * 
  * Properties:
  * @param {String} path - relative path for URL - defaults to '/'
- * @param {String} method - HTTP method to use [GET, POST]
+ * @param {String} method - HTTP method to use [GET, POST, etc]
  * @param {String} host - host to connect to - IP/HOST/DNS NAME
  * @param {Number} port - port to connect
  * @param {Object} headers - JSON Object of HTTP headers to configure 
