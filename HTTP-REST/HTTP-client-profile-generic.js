@@ -94,10 +94,12 @@ const data_types = {
 }
 
 /** HTTP Global variables */
+// Method object to use when building messages. Expand as necessary for PUT or DELETE
 const METHOD = {
     GET: 'GET',
     POST: 'POST',
 }
+// Global objects to manage the request and response building.
 var http_request = null
 var http_response = null
 
@@ -158,7 +160,9 @@ log = function (msg, level = STD_LOGGING) {
     // Initialize LoggingLevel control
     writeToCache(LOGGING_LEVEL_TAG.address, LOGGING_LEVEL);
 
-    // Initialize the http_response cache to handle multi packet processing
+    // Initialize the http_response cache to handle multi packet processing. This is necessary
+    // for situations where the full HTTP response comes in multiple chunks or is large enough 
+    // to be split across multiple packets
     http_response = new HttpResponse()
 
     return { version: VERSION, mode: MODE };
@@ -226,9 +230,6 @@ function onTagsRequest(info) {
     switch(info.type){
         case READ:
             http_request = new HttpRequest();
-
-            let json = tag_list[info.tags[0].address].input_tag_list;
-            let payload = JSON.stringify(json);
             
             // Configure parameters for building the HTTP Request
             http_request.host = "localhost"; 
@@ -246,6 +247,16 @@ function onTagsRequest(info) {
                 'HeaderKey': 'headervalue',
             }
 
+            // JSON payload for whatever REST API call needs to be implemented. In many cases this would be 
+            // payloads based on the tag and action type provided from the UDD driver in the info data
+            // object. Technically this could be a different object type (XML or plain text) depending on 
+            // the REST API being targeted.
+            let json = {
+                'placeholder': "This is just a place holder for whatever JSON payload the user needs to implement"}
+            let payload = JSON.stringify(json);
+
+            // buildRequest method is used to take a string of the HTTP payload and convert it into the
+            // appropriate byte array for the UDD driver to process and send to the endpoint.
             let request = http_request.buildRequest(payload)
             if (!request) {
                 log(`ERROR: onTagRequest - http_request build failed for "${info.tags[0].address}"`)
@@ -255,7 +266,7 @@ function onTagsRequest(info) {
             let readFrame = stringToBytes(request);
             return {action: ACTIONRECEIVE, data: readFrame};
         case WRITE:
-            // Writes are not built into example/API
+            // Tag Writes are not built into example/API but can be implemented
             log(`ERROR: onTagRequest - Write command for address "${info.tags[0].address}" is not supported`)
             return {action: ACTIONFAILURE};
         default:
@@ -281,12 +292,13 @@ function onData(info) {
     let status = http_response.processHTTPmsg(stringResponse)
     if (status !== true) { return status }
 
-    // After receiving full message, verify/handle response code
+    // After receiving full message, verify/handle response code. This can be extened to verify any expected response code based
+    // on REST API call being sent.
     if(http_response.getResponseCode() !== 200) {
         // FAILURE - Non successful response from HTTP server
         log(`ERROR: onData - Received HTTP Code ${http_response.getResponseCode()}; Message: ${JSON.stringify(http_response.msg)}`)
         
-        // reset cache of http_response info
+        // reset cache of http_response info in the event of a failure
         http_response.reset()
         return { action: ACTIONFAILURE }
     }
@@ -301,7 +313,7 @@ function onData(info) {
     }
     catch (e) {
         log(`ERROR: onData - JSON parsing error: ${e.message}`)
-        // reset cache of http_response info
+        // reset cache of http_response info in the event of a failure
         http_response.reset()
         return { action: ACTIONFAILURE }
     }
@@ -319,7 +331,8 @@ function onData(info) {
         tag.value = value
     });
     
-    // reset cache of http_response info after completing processing the whole message. This preps for the next message to be received
+    // reset cache of http_response info after completing processing the whole message. 
+    // This preps for the next message transaction to be received
     http_response.reset()
 
     // Determine if value was not found in the payload
@@ -337,7 +350,7 @@ function onData(info) {
  * 
  * Properties:
  * @param {String} path - relative path for URL - defaults to '/'
- * @param {String} method - HTTP method to use [GET, POST]
+ * @param {String} method - HTTP method to use [GET, POST, etc]
  * @param {String} host - host to connect to - IP/HOST/DNS NAME
  * @param {Number} port - port to connect
  * @param {Object} headers - JSON Object of HTTP headers to configure 
