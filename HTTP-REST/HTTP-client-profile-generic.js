@@ -7,11 +7,11 @@
  * Description: A simple HTTP example profile that queries from a RESTful endpoint
  * that is expecting a JSON object returned in the response.
  * 
- * Generic HTTP client to show how to use the Http_Request and Http_Response classes
+ * Generic HTTP client to show how to use the HttpRequest and HttpResponse classes
  * 
  * Developed on Kepware Server version 6.11, UDD V2.0
  * 
- * Version:     0.1.1
+ * Version:     0.1.2
 ******************************************************************************/
 /**
  * @typedef {string} MessageType - Type of communication "Read", "Write".
@@ -94,10 +94,12 @@ const data_types = {
 }
 
 /** HTTP Global variables */
+// Method object to use when building messages. Expand as necessary for PUT or DELETE
 const METHOD = {
     GET: 'GET',
     POST: 'POST',
 }
+// Global objects to manage the request and response building.
 var http_request = null
 var http_response = null
 
@@ -158,7 +160,9 @@ log = function (msg, level = STD_LOGGING) {
     // Initialize LoggingLevel control
     writeToCache(LOGGING_LEVEL_TAG.address, LOGGING_LEVEL);
 
-    // Initialize the http_response cache to handle multi packet processing
+    // Initialize the http_response cache to handle multi packet processing. This is necessary
+    // for situations where the full HTTP response comes in multiple chunks or is large enough 
+    // to be split across multiple packets
     http_response = new HttpResponse()
 
     return { version: VERSION, mode: MODE };
@@ -226,9 +230,6 @@ function onTagsRequest(info) {
     switch(info.type){
         case READ:
             http_request = new HttpRequest();
-
-            let json = tag_list[info.tags[0].address].input_tag_list;
-            let payload = JSON.stringify(json);
             
             // Configure parameters for building the HTTP Request
             http_request.host = "localhost"; 
@@ -246,6 +247,16 @@ function onTagsRequest(info) {
                 'HeaderKey': 'headervalue',
             }
 
+            // JSON payload for whatever REST API call needs to be implemented. In many cases this would be 
+            // payloads based on the tag and action type provided from the UDD driver in the info data
+            // object. Technically this could be a different object type (XML or plain text) depending on 
+            // the REST API being targeted.
+            let json = {
+                'placeholder': "This is just a place holder for whatever JSON payload the user needs to implement"}
+            let payload = JSON.stringify(json);
+
+            // buildRequest method is used to take a string of the HTTP payload and convert it into the
+            // appropriate byte array for the UDD driver to process and send to the endpoint.
             let request = http_request.buildRequest(payload)
             if (!request) {
                 log(`ERROR: onTagRequest - http_request build failed for "${info.tags[0].address}"`)
@@ -255,7 +266,7 @@ function onTagsRequest(info) {
             let readFrame = stringToBytes(request);
             return {action: ACTIONRECEIVE, data: readFrame};
         case WRITE:
-            // Writes are not built into example/API
+            // Tag Writes are not built into example/API but can be implemented
             log(`ERROR: onTagRequest - Write command for address "${info.tags[0].address}" is not supported`)
             return {action: ACTIONFAILURE};
         default:
@@ -281,12 +292,13 @@ function onData(info) {
     let status = http_response.processHTTPmsg(stringResponse)
     if (status !== true) { return status }
 
-    // After receiving full message, verify/handle response code
+    // After receiving full message, verify/handle response code. This can be extened to verify any expected response code based
+    // on REST API call being sent.
     if(http_response.getResponseCode() !== 200) {
         // FAILURE - Non successful response from HTTP server
         log(`ERROR: onData - Received HTTP Code ${http_response.getResponseCode()}; Message: ${JSON.stringify(http_response.msg)}`)
         
-        // reset cache of http_response info
+        // reset cache of http_response info in the event of a failure
         http_response.reset()
         return { action: ACTIONFAILURE }
     }
@@ -301,7 +313,7 @@ function onData(info) {
     }
     catch (e) {
         log(`ERROR: onData - JSON parsing error: ${e.message}`)
-        // reset cache of http_response info
+        // reset cache of http_response info in the event of a failure
         http_response.reset()
         return { action: ACTIONFAILURE }
     }
@@ -319,7 +331,8 @@ function onData(info) {
         tag.value = value
     });
     
-    // reset cache of http_response info after completing processing the whole message. This preps for the next message to be received
+    // reset cache of http_response info after completing processing the whole message. 
+    // This preps for the next message transaction to be received
     http_response.reset()
 
     // Determine if value was not found in the payload
@@ -337,7 +350,7 @@ function onData(info) {
  * 
  * Properties:
  * @param {String} path - relative path for URL - defaults to '/'
- * @param {String} method - HTTP method to use [GET, POST]
+ * @param {String} method - HTTP method to use [GET, POST, etc]
  * @param {String} host - host to connect to - IP/HOST/DNS NAME
  * @param {Number} port - port to connect
  * @param {Object} headers - JSON Object of HTTP headers to configure 
@@ -505,67 +518,67 @@ function onData(info) {
      */
     processHTTPmsg(stringResponse) {
         // extract HTTP response header
-        if (Object.keys(http_response.headers).length === 0) {
-            http_response.headers = this.#parseHTTPHeader(stringResponse.substring(0, 
+        if (Object.keys(this.headers).length === 0) {
+            this.headers = this.#parseHTTPHeader(stringResponse.substring(0, 
                 stringResponse.indexOf(this.#HTTP_HEADER_TERMINATOR+this.#HTTP_HEADER_TERMINATOR)));
-            http_response.unprocessed = stringResponse.slice(stringResponse.indexOf(this.#HTTP_HEADER_TERMINATOR+
+            this.unprocessed = stringResponse.slice(stringResponse.indexOf(this.#HTTP_HEADER_TERMINATOR+
                 this.#HTTP_HEADER_TERMINATOR)+(this.#HTTP_HEADER_TERMINATOR+this.#HTTP_HEADER_TERMINATOR).length)
-            log(`onData - HTTP Header Received: ${JSON.stringify(http_response.headers)}`, VERBOSE_LOGGING)
+            log(`onData - HTTP Header Received: ${JSON.stringify(this.headers)}`, VERBOSE_LOGGING)
         }
         else {
             // If the header has already been processed on a previous chunk, treat as payload data
-            http_response.unprocessed = http_response.unprocessed.concat(...stringResponse)
+            this.unprocessed = this.unprocessed.concat(...stringResponse)
         }
 
         // confirm if message is using HTTP chunking and process payload as chunks
-        if ('Transfer-Encoding'.toLowerCase() in http_response.headers) {
-            switch (http_response.headers['Transfer-Encoding'.toLowerCase()]) {
+        if ('Transfer-Encoding'.toLowerCase() in this.headers) {
+            switch (this.headers['Transfer-Encoding'.toLowerCase()]) {
                 case 'chunked':
-                    log(`Unprocessed Length: ${http_response.unprocessed.length}`, DEBUG_LOGGING)
-                    let result = this.#parseChunkedMsg(http_response.unprocessed);
-                    http_response.msg = http_response.msg.concat(...result.msg);
-                    log(`Processed Length: ${http_response.msg.length}`, DEBUG_LOGGING)
+                    log(`Unprocessed Length: ${this.unprocessed.length}`, DEBUG_LOGGING)
+                    let result = this.#parseChunkedMsg(this.unprocessed);
+                    this.msg = this.msg.concat(...result.msg);
+                    log(`Processed Length: ${this.msg.length}`, DEBUG_LOGGING)
                     if (!result.complete) {
-                        http_response.unprocessed = result.leftover
-                        log(`Unprocessed (post parse) Length: ${http_response.unprocessed.length}`, DEBUG_LOGGING)
+                        this.unprocessed = result.leftover
+                        log(`Unprocessed (post parse) Length: ${this.unprocessed.length}`, DEBUG_LOGGING)
                         return { action: ACTIONRECEIVE }
                     }
                     break;
                 default:
-                    log(`ERROR: onData - Not supported Transfer-Encoding type: ${http_response.headers
+                    log(`ERROR: onData - Not supported Transfer-Encoding type: ${this.headers
                         ['Transfer-Encoding'.toLowerCase()]}`)
                     return { action: ACTIONFAILURE }
             }
         }
         // Confirm if full message payload has been received for non-chunk encoded HTTP payloads
-        else if ('Content-Length'.toLowerCase() in http_response.headers) {
+        else if ('Content-Length'.toLowerCase() in this.headers) {
             // Compare data length to Content-Length. If Content-Length is greater then the total received data
             // need to listen for more data from driver
-            log(`onData - Content-Length Value: ${http_response.headers['Content-Length'.toLowerCase()]}`, DEBUG_LOGGING)
-            log(`onData - Current Msg Length: ${http_response.msg.length}`, DEBUG_LOGGING)
-            log(`onData - New Data Length: ${http_response.unprocessed.length}`, DEBUG_LOGGING)
-            if (http_response.headers['Content-Length'.toLowerCase()] > http_response.msg.length + http_response.unprocessed.length) {
-                http_response.msg = http_response.msg.concat(...http_response.unprocessed)
-                http_response.unprocessed = ''
+            log(`onData - Content-Length Value: ${this.headers['Content-Length'.toLowerCase()]}`, DEBUG_LOGGING)
+            log(`onData - Current Msg Length: ${this.msg.length}`, DEBUG_LOGGING)
+            log(`onData - New Data Length: ${this.unprocessed.length}`, DEBUG_LOGGING)
+            if (this.headers['Content-Length'.toLowerCase()] > this.msg.length + this.unprocessed.length) {
+                this.msg = this.msg.concat(...this.unprocessed)
+                this.unprocessed = ''
                 return { action: ACTIONRECEIVE }
             }
-            else if (http_response.headers['Content-Length'.toLowerCase()] == http_response.msg.length + http_response.unprocessed.length) {
-                http_response.msg = http_response.msg.concat(...http_response.unprocessed)
+            else if (this.headers['Content-Length'.toLowerCase()] == this.msg.length + this.unprocessed.length) {
+                this.msg = this.msg.concat(...this.unprocessed)
             }
             else {
                 // FAILURE
-                log(`ERROR: onData - Received (${http_response.msg.length + http_response.unprocessed.length} bytes) more then Content-Length 
-                    value: ${http_response.headers['Content-Length'.toLowerCase()]}`)
+                log(`ERROR: onData - Received (${this.msg.length + this.unprocessed.length} bytes) more then Content-Length 
+                    value: ${this.headers['Content-Length'.toLowerCase()]}`)
                 
                 // reset cache of http_response info
-                http_response.reset()
+                this.reset()
                 return { action: ACTIONFAILURE }
             }
         }
         // Unsupported format - Unknown message payload type/length to parse
         else {
-            log(`ERROR: onData - Unknown Transfer-Encoding/Content-Length in HTTP header: ${JSON.stringify(http_response.headers)}`)
-            http_response.reset()
+            log(`ERROR: onData - Unknown Transfer-Encoding/Content-Length in HTTP header: ${JSON.stringify(this.headers)}`)
+            this.reset()
             return { action: ACTIONFAILURE }
         }
 
