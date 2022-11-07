@@ -11,7 +11,10 @@
  * 
  * Developed on Kepware Server version 6.11, UDD V2.0
  * 
- * Version:     0.1.1
+ * Update History:
+ * 0.1.2:   Added handling for incomplete HTTP headers in response.
+ * 
+ * Version:     0.1.2
 ******************************************************************************/
 
 /**
@@ -570,17 +573,19 @@ class HttpRequest {
      *                                      actions to listen for more data from the UDD driver
      */
     processHTTPmsg(stringResponse) {
-        // extract HTTP response header
+        this.unprocessed = this.unprocessed.concat(...stringResponse)
+        
+        // extract HTTP response header. If the header has already been processed on a previous chunk, treat as payload data
         if (Object.keys(this.headers).length === 0) {
-            this.headers = this.#parseHTTPHeader(stringResponse.substring(0, 
-                stringResponse.indexOf(this.#HTTP_HEADER_TERMINATOR+this.#HTTP_HEADER_TERMINATOR)));
-            this.unprocessed = stringResponse.slice(stringResponse.indexOf(this.#HTTP_HEADER_TERMINATOR+
+            // Check to ensure that the full header payload has been received, if not then return to receive more.
+            if (this.unprocessed.search(this.#HTTP_HEADER_TERMINATOR+this.#HTTP_HEADER_TERMINATOR) === -1){
+                return { action: ACTIONRECEIVE }
+            }
+            this.headers = this.#parseHTTPHeader(this.unprocessed.substring(0, 
+                this.unprocessed.indexOf(this.#HTTP_HEADER_TERMINATOR+this.#HTTP_HEADER_TERMINATOR)));
+            this.unprocessed = this.unprocessed.slice(this.unprocessed.indexOf(this.#HTTP_HEADER_TERMINATOR+
                 this.#HTTP_HEADER_TERMINATOR)+(this.#HTTP_HEADER_TERMINATOR+this.#HTTP_HEADER_TERMINATOR).length)
             log(`onData - HTTP Header Received: ${JSON.stringify(this.headers)}`, VERBOSE_LOGGING)
-        }
-        else {
-            // If the header has already been processed on a previous chunk, treat as payload data
-            this.unprocessed = this.unprocessed.concat(...stringResponse)
         }
 
         // confirm if message is using HTTP chunking and process payload as chunks
