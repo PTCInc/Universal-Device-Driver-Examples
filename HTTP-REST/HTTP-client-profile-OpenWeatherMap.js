@@ -14,7 +14,10 @@
  * 
  * Developed on Kepware Server version 6.11, UDD V2.0
  * 
- * Version:     0.1.3
+ * Update History:
+ * 0.1.4:   Added handling for incomplete HTTP headers in response.
+ * 
+ * Version:     0.1.4
 ******************************************************************************/
 /**
  * @typedef {string} MessageType - Type of communication "Read", "Write".
@@ -322,7 +325,7 @@ function onTagsRequest(info) {
  * @return {OnTransactionResult}   - The action to take, tags to complete (if any) and/or data to send (if any).
  */
 function onData(info) {
-    log(`onValidateTag - info: ${JSON.stringify(info.tags)}`, DEBUG_LOGGING)
+    log(`onData - info.tags: ${JSON.stringify(info.tags)}`, DEBUG_LOGGING)
 
     let tags = info.tags;
 
@@ -535,17 +538,19 @@ function onData(info) {
      *                                      actions to listen for more data from the UDD driver
      */
     processHTTPmsg(stringResponse) {
-        // extract HTTP response header
+        this.unprocessed = this.unprocessed.concat(...stringResponse)
+        
+        // extract HTTP response header. If the header has already been processed on a previous chunk, treat as payload data
         if (Object.keys(this.headers).length === 0) {
-            this.headers = this.#parseHTTPHeader(stringResponse.substring(0, 
-                stringResponse.indexOf(this.#HTTP_HEADER_TERMINATOR+this.#HTTP_HEADER_TERMINATOR)));
-            this.unprocessed = stringResponse.slice(stringResponse.indexOf(this.#HTTP_HEADER_TERMINATOR+
+            // Check to ensure that the full header payload has been received, if not then return to receive more.
+            if (this.unprocessed.search(this.#HTTP_HEADER_TERMINATOR+this.#HTTP_HEADER_TERMINATOR) === -1){
+                return { action: ACTIONRECEIVE }
+            }
+            this.headers = this.#parseHTTPHeader(this.unprocessed.substring(0, 
+                this.unprocessed.indexOf(this.#HTTP_HEADER_TERMINATOR+this.#HTTP_HEADER_TERMINATOR)));
+            this.unprocessed = this.unprocessed.slice(this.unprocessed.indexOf(this.#HTTP_HEADER_TERMINATOR+
                 this.#HTTP_HEADER_TERMINATOR)+(this.#HTTP_HEADER_TERMINATOR+this.#HTTP_HEADER_TERMINATOR).length)
             log(`onData - HTTP Header Received: ${JSON.stringify(this.headers)}`, VERBOSE_LOGGING)
-        }
-        else {
-            // If the header has already been processed on a previous chunk, treat as payload data
-            this.unprocessed = this.unprocessed.concat(...stringResponse)
         }
 
         // confirm if message is using HTTP chunking and process payload as chunks
