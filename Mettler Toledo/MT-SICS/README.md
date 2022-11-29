@@ -25,19 +25,19 @@ Tags can be created either using a predefined data address to determine the appr
 |I5             |String         |RO             |Inquiry of SW-Identification number|
 |S              |Float          |RO             |Send stable weight value|
 |SI             |Float          |RO             |Send weight value immediately|
-|Z              |Boolean        |RW             |Zero the balance|
-|ZI             |Boolean        |RW             |Zero the balance immediately regardless the stability of the balance|
-|@              |Boolean        |RW             |Resets the balance to the condition found after switching on, but without a zero setting being performed|
+|Z              |Boolean        |WO             |Zero the balance|
+|ZI             |Boolean        |WO             |Zero the balance immediately regardless the stability of the balance|
+|@              |Boolean        |WO             |Resets the balance to the condition found after switching on, but without a zero setting being performed|
 
 #### SICS Level 1 Commands
 
 |Tag|Data Type|Access|Description|
 | :----------:  | :----------:  | :----------:  | :----------:  |
-|DW             |Boolean        |RW             |Switch main display to weight mode|
-|T              |Boolean        |RW             |Tare, i.e. store the next stable weight value as a new tare weight value|
-|TA             |Float          |RO             |Inquiry of the tare weight value or set preset value|
-|TAC            |Boolean        |RW             |Clear tare value|
-|TI             |Boolean        |RW             |Tare immediately, i.e. store the current weight value, which can be stable or non stable (dynamic), as tare weight value|
+|DW             |Boolean        |WO             |Switch main display to weight mode|
+|T              |Boolean        |WO             |Tare, i.e. store the next stable weight value as a new tare weight value|
+|TA             |Float          |RW             |Inquiry of the tare weight value or set preset value|
+|TAC            |Boolean        |WO             |Clear tare value|
+|TI             |Boolean        |WO             |Tare immediately, i.e. store the current weight value, which can be stable or non stable (dynamic), as tare weight value|
 
 ### System Addressing
 
