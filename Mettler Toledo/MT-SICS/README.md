@@ -41,7 +41,7 @@ Tags can be created either using a predefined data address to determine the appr
 
 ### System Addressing
 
-The following addresses can be used to manage login and other various data.
+The following addresses can be used to manage logging level.
 
 |Tag|Data Type| Access |Description|
 | :----------:  | :----------:  | :----------:  |:----------:  |
