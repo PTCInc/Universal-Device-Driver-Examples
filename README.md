@@ -12,9 +12,9 @@ Review [License](license.md) for more information.
 
 ## Overview
 
-Kepware's [Universal Device driver (UDD)](https://www.kepware.com/products/kepserverex/drivers/udd/) accelerates creating user-defined custom driver profiles using JavaScript enabling greater visibility to Tier 2 and Tier 3 niche manufacturing devices including barcode readers, weigh scales, various sensors and RTUs. The introduction of a self-describing and generic development framework and scripting engine gives the writer flexible control over managing driver aspects like basic communication types as well as build and parse messaging. Users can create UDD profiles and configure multiple instances of the profile to connect with their devices.
+Kepware's [Universal Device driver (UDD)](https://www.kepware.com/products/kepserverex/drivers/udd/) accelerates creating user-defined custom driver profiles using JavaScript enabling greater visibility to Tier 2 and Tier 3 niche manufacturing devices including barcode readers, weigh scales, various sensors, simple web servers and RTUs. The introduction of a self-describing and generic development framework and scripting engine gives the writer flexible control over managing driver aspects like basic communication types as well as build and parse messaging. Users can create UDD profiles and configure multiple instances of the profile to connect with their devices.
 
-Example profiles for various hardware and protocol use cases can be found in this repository.
+Example profiles for various hardware and protocol use cases can be found in this repository. Also refer to the [UDD Development Guide by the Kepware Solutions Consulting team](docs/UDD%20Development%20Guide%20and%20Deep%20Dive%20-%20Kepware%20Solutions%20Consulting.pdf) for more information about the UDD environment and references to official documentation and manuals.
 
 ## Prerequisites
 
