@@ -12,6 +12,8 @@ This profile was developed while connecting to a [QT50L-ETN](https://www.qlight.
 
 Below are the tags specific to monitoring and controlling the status of each light and sound/buzzer signal.
 
+*NOTE: Transactions are triggered by reading the "red" tag. To get any data, a client must read the "red" tag by default. This can be changed in the profile code if desired.*
+
 |Tag|Data Type|Access|Description|
 | :----------:  | :----------:  | :----------:  | :----------:  |
 |red            |Word           |RW             |Red indicator status and command (0: Off, 1: On, 2: Blink)|
