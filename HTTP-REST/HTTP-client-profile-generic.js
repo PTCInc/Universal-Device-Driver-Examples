@@ -223,6 +223,16 @@ function onValidateTag(info) {
 
 }
 
+/**
+ * Handle request for a tag to be completed.
+ *
+ * @param {object}      info       - Object containing the function arguments.
+ * @param {MessageType} info.type  - Communication mode for tags. Can be undefined.
+ * @param {Tag[]}       info.tags  - Tags currently being processed. Can be undefined.
+ *
+ * @return {OnTransactionResult}   - The action to take, tags to complete (if any) and/or data to send (if any).
+ */
+
 function onTagsRequest(info) {
     // Check if tag is LoggingLevel, update from cached value
     if (info.tags[0].address === LOGGING_LEVEL_TAG.address){
@@ -279,7 +289,16 @@ function onTagsRequest(info) {
     
 }
 
-
+/**
+ * Handle incoming data.
+ *
+ * @param {object}      info       - Object containing the function arguments.
+ * @param {MessageType} info.type  - Communication mode for tags. Can be undefined.
+ * @param {Tag[]}       info.tags  - Tags currently being processed. Can be undefined.
+ * @param {Data}        info.data  - The incoming data.
+ *
+ * @return {OnTransactionResult}   - The action to take, tags to complete (if any) and/or data to send (if any).
+ */
 function onData(info) {
     log(`onData - info.tags: ${JSON.stringify(info.tags)}`, DEBUG_LOGGING)
     let tags = info.tags;
