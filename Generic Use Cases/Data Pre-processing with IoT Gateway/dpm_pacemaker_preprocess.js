@@ -16,8 +16,10 @@
  * 
  * Update History:
  * 0.1.2:   Added handling for incomplete HTTP headers in response.
+ * 0.1.3:   Fixed chunking message parsing error. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/18
+ *          Added reset of http response buffer to handle failures/reconnects. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/15
  * 
- * Version:     0.1.2
+ * Version:     0.1.3
 ******************************************************************************/
 
 /**
@@ -284,6 +286,9 @@ function onValidateTag(info) {
 function onTagsRequest(info) {
     log(`onTagsRequest - info: ${JSON.stringify(info)}`, VERBOSE_LOGGING)
     
+    // Clear response in event this is a tag transaction after a failure.
+    http_response.reset()
+
     // Check if tag is LoggingLevel, update from cached value
     if (info.tags[0].address === LOGGING_LEVEL_TAG.address){
         let returnAction = updateLoggingTag(info);
@@ -458,7 +463,7 @@ function onData(info) {
  * 
  * Properties:
  * @param {String} path - relative path for URL - defaults to '/'
- * @param {String} method - HTTP method to use [GET, POST]
+ * @param {String} method - HTTP method to use [GET, POST, etc]
  * @param {String} host - host to connect to - IP/HOST/DNS NAME
  * @param {Number} port - port to connect
  * @param {Object} headers - JSON Object of HTTP headers to configure 
@@ -466,7 +471,7 @@ function onData(info) {
  * Methods:
  * @method buildRequest - Builds the necessary HTTP request message based on the properties configured.
  *****************************************************************************************************/
- class HttpRequest {
+class HttpRequest {
     #HEADERS = {
         CONTENTTYPE: 'Content-Type',
         HOST: 'Host',
@@ -585,6 +590,8 @@ function onData(info) {
       }
 }
 
+
+
 /*****************************************************************************************************
  * Class to create HttpResponse object used to process HTTP messages
  * and provide easy access to HTTP related data
@@ -635,20 +642,20 @@ function onData(info) {
                 this.unprocessed.indexOf(this.#HTTP_HEADER_TERMINATOR+this.#HTTP_HEADER_TERMINATOR)));
             this.unprocessed = this.unprocessed.slice(this.unprocessed.indexOf(this.#HTTP_HEADER_TERMINATOR+
                 this.#HTTP_HEADER_TERMINATOR)+(this.#HTTP_HEADER_TERMINATOR+this.#HTTP_HEADER_TERMINATOR).length)
-            log(`onData - HTTP Header Received: ${JSON.stringify(this.headers)}`, VERBOSE_LOGGING)
+            log(`processHTTPmsg - HTTP Header Received: ${JSON.stringify(this.headers)}`, VERBOSE_LOGGING)
         }
 
         // confirm if message is using HTTP chunking and process payload as chunks
         if ('Transfer-Encoding'.toLowerCase() in this.headers) {
             switch (this.headers['Transfer-Encoding'.toLowerCase()]) {
                 case 'chunked':
-                    log(`Unprocessed Length: ${this.unprocessed.length}`, DEBUG_LOGGING)
+                    log(`processHTTPmsg -Unprocessed Length: ${this.unprocessed.length}`, DEBUG_LOGGING)
                     let result = this.#parseChunkedMsg(this.unprocessed);
                     this.msg = this.msg.concat(...result.msg);
-                    log(`Processed Length: ${this.msg.length}`, DEBUG_LOGGING)
+                    log(`processHTTPmsg -Processed Length: ${this.msg.length}`, DEBUG_LOGGING)
                     if (!result.complete) {
                         this.unprocessed = result.leftover
-                        log(`Unprocessed (post parse) Length: ${this.unprocessed.length}`, DEBUG_LOGGING)
+                        log(`processHTTPmsg - Chunk Msg Not Complete. Unprocessed (post parse) Length: ${this.unprocessed.length}`, DEBUG_LOGGING)
                         return { action: ACTIONRECEIVE }
                     }
                     break;
@@ -662,9 +669,9 @@ function onData(info) {
         else if ('Content-Length'.toLowerCase() in this.headers) {
             // Compare data length to Content-Length. If Content-Length is greater then the total received data
             // need to listen for more data from driver
-            log(`onData - Content-Length Value: ${this.headers['Content-Length'.toLowerCase()]}`, DEBUG_LOGGING)
-            log(`onData - Current Msg Length: ${this.msg.length}`, DEBUG_LOGGING)
-            log(`onData - New Data Length: ${this.unprocessed.length}`, DEBUG_LOGGING)
+            log(`processHTTPmsg - Content-Length Value: ${this.headers['Content-Length'.toLowerCase()]}`, DEBUG_LOGGING)
+            log(`processHTTPmsg - Current Msg Length: ${this.msg.length}`, DEBUG_LOGGING)
+            log(`processHTTPmsg - New Data Length: ${this.unprocessed.length}`, DEBUG_LOGGING)
             if (this.headers['Content-Length'.toLowerCase()] > this.msg.length + this.unprocessed.length) {
                 this.msg = this.msg.concat(...this.unprocessed)
                 this.unprocessed = ''
@@ -737,23 +744,28 @@ function onData(info) {
     #parseChunkedMsg(msg) {
         let result = ''
         while(msg.length > 0) {
+            if (msg.indexOf(this.#CHUNKED_TERMINATOR) === -1) {
+                return { complete: false, msg: result, leftover: msg }
+            }
             let chunk_header = msg.slice(0, msg.indexOf(this.#CHUNKED_TERMINATOR))
             let chunk_size = parseInt(chunk_header, 16);
             log(`parseChunkedMsg - chunk_size: ${chunk_size}`, DEBUG_LOGGING)
             if (chunk_size === 0) {
                 msg = msg.slice(msg.indexOf(this.#CHUNKED_TERMINATOR+this.#CHUNKED_TERMINATOR)+(this.#CHUNKED_TERMINATOR+this.#CHUNKED_TERMINATOR).length)
+                return { complete: true, msg: result }
             }
             // Need to wait for more data to be provided from driver buffer
-            else if (chunk_size > msg.length) {
+            else if (chunk_size + chunk_header.length + this.#CHUNKED_TERMINATOR.length >= msg.length) {
                 return { complete: false, msg: result, leftover: msg }
             }
             else {
                 result = result.concat(...msg.substr(msg.indexOf(this.#CHUNKED_TERMINATOR)+this.#CHUNKED_TERMINATOR.length,chunk_size))
                 // TODO: Verify Terminator before moving on. This currently assumes Terminator is last bytes before next chunk.
                 msg = msg.slice(msg.indexOf(this.#CHUNKED_TERMINATOR)+this.#CHUNKED_TERMINATOR.length + chunk_size + this.#CHUNKED_TERMINATOR.length)
+
             }
         }
-        return { complete: true, msg: result }
+        return { complete: false, msg: result, leftover: msg }
     }
 
 }
