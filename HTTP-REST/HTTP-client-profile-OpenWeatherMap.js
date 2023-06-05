@@ -428,6 +428,7 @@ function onData(info) {
     // Determine if value was not found in the payload
     // If not, don't send tags object which will set tag to bad quality
     if (tags[0].value === undefined || tags[0].value === null) {
+        log(`ERROR: Value for tag address "${tags[0].address}" not found in JSON payload`)
         return { action: ACTIONCOMPLETE };
     }
 
