@@ -12,13 +12,17 @@
  * raw values from the automation layer to be received by the DPM solution in Thingworx.
  * 
  * 
- * Developed on Kepware Server version 6.11, UDD V2.0
+ * Developed on Kepware Server version 6.13, UDD V2.0
  * 
  * Update History:
  * 0.1.2:   Added handling for incomplete HTTP headers in response.
  * 0.1.3:   Fixed chunking message parsing error. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/18
  *          Added reset of http response buffer to handle failures/reconnects. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/15
  * 0.1.4:   Fixed HTTP reason code and description parsing. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/21 
+ *          Added handling for potential extra responses received during retry 
+ *              process https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/16
+ *          Modified failed result logic to ensure http_response object gets reset in all failed conditions and 
+ *              to only put tag in bad quality during a failure instead of a "DNR" (ACTIONFAILURE) state
  * 
  * Version:     0.1.4
 ******************************************************************************/
@@ -353,6 +357,24 @@ function onTagsRequest(info) {
 function onData(info) {
     log(`onData - info.tags: ${JSON.stringify(info.tags)}`, VERBOSE_LOGGING)
 
+    // For situations where request retries are sent from the driver, it could result in the webserver sending multiple responses back.
+    // In these situations, data would be received that is not connected to a tag transaction event. This looks like an "unsolicited" data receipt
+    // and the driver will call the onData without any tags.
+
+    // Since HTTP is solicited, this will assume that any responses without a tag in the transaction will be ignored.
+
+    if (info.tags == undefined){
+        log(`onData - info.tags does not exist. Info: ${JSON.stringify(info)}`, DEBUG_LOGGING)
+
+        log(`ERROR - Unexpected data received without a tag request. Possibly an extra response from a retry event.`)
+
+        // reset cache of http_response info
+        // This preps for the next message transaction to be received 
+        http_response.reset()
+        
+        return { action: ACTIONCOMPLETE }
+    }
+
     let tags = info.tags;
 
     // Convert the response to a string
@@ -454,21 +476,22 @@ function onData(info) {
         case TARGETQUANTITYADDRESS:
         case SCRAPCOUNTSADDRESS:
             // Not used in example
-            return { action: ACTIONCOMPLETE };
+            result = false;
         default:
             log(`onData - ERROR - Unknown address ${tags[0].address} received`)
-            return { action: ACTIONCOMPLETE };
+            result = false;
     }
-
-    // check to see if result failed from data check
-    if (result === false){
-        return { action: ACTIONFAILURE };
-    }
-    writeToCache(tags[0].address, result)
-    tags[0].value = result
 
     // reset cache of http_response info
     http_response.reset()
+
+    // check to see if result failed from data check
+    if (result === false){
+        // Don't return tags to set tag in transaction to bad quality.
+        return { action: ACTIONCOMPLETE };
+    }
+    writeToCache(tags[0].address, result)
+    tags[0].value = result
 
     return { action: ACTIONCOMPLETE, tags: tags};
 
