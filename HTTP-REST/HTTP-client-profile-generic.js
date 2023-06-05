@@ -15,7 +15,10 @@
  * 0.1.2:   Added handling for incomplete HTTP headers in response.
  * 0.1.3:   Fixed chunking message parsing error. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/18
  *          Added reset of http response buffer to handle failures/reconnects. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/15
- * 0.1.4:   Fixed HTTP reason code and description parsing. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/21 
+ * 0.1.4:   Fixed HTTP reason code and description parsing. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/21
+ *          Added handling for potential extra responses received during retry 
+ *              process https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/16
+ * 
  * 
  * Version:     0.1.4
 ******************************************************************************/
@@ -309,6 +312,25 @@ function onTagsRequest(info) {
  */
 function onData(info) {
     log(`onData - info.tags: ${JSON.stringify(info.tags)}`, DEBUG_LOGGING)
+
+    // For situations where request retries are sent from the driver, it could result in the webserver sending multiple responses back.
+    // In these situations, data would be received that is not connected to a tag transaction event. This looks like an "unsolicited" data receipt
+    // and the driver will call the onData without any tags.
+
+    // Since HTTP is solicited, this will assume that any responses without a tag in the transaction will be ignored.
+
+    if (info.tags == undefined){
+        log(`onData - info.tags does not exist. Info: ${JSON.stringify(info)}`, DEBUG_LOGGING)
+
+        log(`ERROR - Unexpected data received without a tag request. Possibly an extra response from a retry event.`)
+
+        // reset cache of http_response info
+        // This preps for the next message transaction to be received 
+        http_response.reset()
+        
+        return { action: ACTIONCOMPLETE }
+    }
+
     let tags = info.tags;
 
     // Convert the response to a string
@@ -382,8 +404,9 @@ function onData(info) {
     http_response.reset()
 
     // Determine if value was not found in the payload
+    // If not, don't send tags object which will set tag to bad quality
     if (tags[0].value === undefined || tags[0].value === null) {
-        return { action: ACTIONFAILURE };
+        return { action: ACTIONCOMPLETE };
     }
 
     return { action: ACTIONCOMPLETE, tags: tags };
