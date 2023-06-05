@@ -9,7 +9,7 @@
  * 
  * Generic HTTP client to show how to use the HttpRequest and HttpResponse classes
  * 
- * Developed on Kepware Server version 6.11, UDD V2.0
+ * Developed on Kepware Server version 6.13, UDD V2.0
  * 
  * Update History:
  * 0.1.2:   Added handling for incomplete HTTP headers in response.

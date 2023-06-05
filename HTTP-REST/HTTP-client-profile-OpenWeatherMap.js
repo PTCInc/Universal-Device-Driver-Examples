@@ -12,7 +12,7 @@
  * 
  * User will need to create a free API key to be able to query endpoint
  * 
- * Developed on Kepware Server version 6.11, UDD V2.0
+ * Developed on Kepware Server version 6.13, UDD V2.0
  * 
  * Update History:
  * 0.1.4:   Added handling for incomplete HTTP headers in response.
