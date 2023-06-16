@@ -8,12 +8,16 @@
  * using the Machine Data Collection (MDC) interface with Q and E commands. 
  * https://www.haascnc.com/service/troubleshooting-and-how-to/how-to/machine-data-collection---ngc.html
  * 
- * Be aware that this profile is not tested against an actual MDC interface.
+ * BETA Profile - Be aware that this profile has not been tested against an actual MDC interface. If you
+ *      are interested in using this profile feel free to contact through the discussions on the repository 
+ *      and we can coordinate testing.
  * 
  * Developed on Kepware Server version 6.13
  * 
+ * Update History:
+ * 0.1.0beta:   Initial Beta Release
  * 
- * Version: 0.1.0
+ * Version: 0.1.0beta
 ******************************************************************************/
 /**
  * @typedef {string} MessageType - Type of communication "Read", "Write".

@@ -8,6 +8,8 @@ Because the profiles are provided "as-is" per the [licensing terms](../license.m
 
 Profiles have versions, which follow the pattern: \<major>.\<minor>.\<update>, where a minor versions of a major version are backwards compatible with each other. The \<update> designation is for updates to a profile for issue resolution.
 
+If a profile is versioned as a beta version (\<major>.\<minor>.\<update>beta), this is an indication that it was initially developed using the documentation from the vendor and validated against precreated responses and NOT hardware. Once it has been validated against hardware, the beta label will be removed from the profile. If you would like to assist in testing against hardware, please reach out to us in the Discussions area of the repository to coordinate with the team.
+
 ## Pull Requests
 
 Pull Requests can be created by any user wanting to contribute to the repo. The owners of the repo will approve pull requests as changes are reviewed and will determine if changes meet the intent of the repository.
