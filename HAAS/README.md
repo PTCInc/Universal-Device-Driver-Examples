@@ -6,7 +6,7 @@ This profile was developed against a simulator with example responses provided b
 
 ## Requirements
 
-- Kepware versions 6.13 or higher
+- Kepware versions 6.11 or higher that support the UDD v2.0 profile
 
 ## Tag Configuration
 
