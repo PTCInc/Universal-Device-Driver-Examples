@@ -2,7 +2,7 @@
 
 This profile uses the Machine Data Collection (MDC) interface available on HAAS CNC machine. This interface allows for a user to read and write to the machine using different commands.
 
-This profile was developed against a simulator with example responses provided by HAAS documentation, not against a real machine. Please be cautious using this profile and see HAAS documentation for complete details on addressing and commands.
+This profile was developed against a simulator with example responses provided by HAAS documentation, not against an actual MDC interface. Please be cautious using this profile and see HAAS documentation for complete details on addressing and commands.
 
 ## Requirements
 

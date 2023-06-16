@@ -122,7 +122,7 @@ const STD_LOGGING = 0;
 const VERBOSE_LOGGING = 1;
 const DEBUG_LOGGING = 2;
 // Sets initial Logging Level
-const LOGGING_LEVEL = DEBUG_LOGGING;
+const LOGGING_LEVEL = STD_LOGGING;
 
 /** Captures the global log function so that it can be wrapped **/
 let originalLogFunction = log;
@@ -204,8 +204,17 @@ function onValidateTag(info) {
         // Validate the address against the regular expression
         if (regex.test(info.tag.address)) {
             info.tag.valid = true;
-            info.tag.readOnly = false;
-            // Fix the data type to the correct one
+
+            // Allow only E addresses to Read Write (RW) access permission
+            let regexE = /^([?]E[0-9]{1,5})*?$/;
+            if (regexE.test(info.tag.address)){
+                info.tag.readOnly = false;
+            }
+            else {
+                info.tag.readOnly = true;
+            }
+            
+            // Default datatype is not allowed, correction to String type
             if (info.tag.dataType === data_types.DEFAULT){
                 info.tag.dataType = data_types.STRING
             }
@@ -247,7 +256,6 @@ function onTagsRequest(info) {
        return returnAction;
     }
 
-
     // Validate the address against the regular expression for ?E addresses
     let regexE = /^([?]E[0-9]{1,5})*?$/;
 
@@ -267,21 +275,14 @@ function onTagsRequest(info) {
                 return { action: ACTIONRECEIVE, data: writeFrame }
             }
         case WRITE:
-            // Send command to write for E addresses
-            if (regexE.test(tag.address)) {
+            // Send command to write for only E addresses, the rest of addresses are read only and handled in onValidateTag function
                 let command_string = `${tag.address}${SPACE_CHARACTER}${tag.value}${COMMAND_TERMINATOR}`
                 log(`onTagsRequest - command_string: ${command_string}`, DEBUG_LOGGING)
                 let writeFrame = stringToByteArray(command_string)
                 log(`onTagsRequest - writeFrame: ${writeFrame}`, DEBUG_LOGGING)
 
-                // no check to verify or acknowledge Write requests. Transaction is completed after the write requests is sent.
+                // no check to verify or acknowledge Write requests. Transaction is completed after the write request is sent.
                 return { action: ACTIONCOMPLETE, data: writeFrame }
-            }
-            // Writing is not possible for Q addresses
-            else{
-                log(`ERROR: onTagRequest - Tags with Q type addresses cannot be written.`);
-                return {action: ACTIONFAILURE};
-            }
         default:
             log(`ERROR: onTagRequest - Unexpected error: ${info.type}`);
             return { action: ACTIONFAILURE };
@@ -335,10 +336,10 @@ function onTagsRequest(info) {
         return { action: ACTIONCOMPLETE, tags: info.tags }
     }
 
-    // Parsing for any other Q commands, done by splitting on comma
-    let response = buffer.split(', ')
-    let responseValue = response[1]
-    log(`responseValue: ${responseValue}`)
+    // Parsing for any other Q commands, done by splitting on comma and trimming the white space
+    let response = buffer.split(',')
+    let responseValue = response[1].trimStart()
+    log(`responseValue: ${responseValue}`, DEBUG_LOGGING)
 
     tag.value = responseValue
     log(`tag.value: ${tag.value}`, DEBUG_LOGGING)
