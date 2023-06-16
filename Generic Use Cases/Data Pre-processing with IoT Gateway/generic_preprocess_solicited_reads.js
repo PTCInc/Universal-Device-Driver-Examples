@@ -9,14 +9,19 @@
  * tags within the UDD driver.
  * 
  * 
- * Developed on Kepware Server version 6.11, UDD V2.0
+ * Developed on Kepware Server version 6.13, UDD V2.0
  * 
  * Update History:
  * 0.1.2:   Added handling for incomplete HTTP headers in response.
  * 0.1.3:   Fixed chunking message parsing error. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/18
  *          Added reset of http response buffer to handle failures/reconnects. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/15
+ * 0.1.4:   Fixed HTTP reason code and description parsing. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/21 
+ *          Added handling for potential extra responses received during retry 
+ *              process https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/16
+ *          Modified failed result logic to ensure http_response object gets reset in all failed conditions and 
+ *              to only put tag in bad quality during a failure instead of a "DNR" (ACTIONFAILURE) state
  * 
- * Version:     0.1.3
+ * Version:     0.1.4
 ******************************************************************************/
 
 /**
@@ -311,6 +316,24 @@ function onTagsRequest(info) {
 function onData(info) {
     log(`onData - info: ${JSON.stringify(info)}`, VERBOSE_LOGGING)
 
+    // For situations where request retries are sent from the driver, it could result in the webserver sending multiple responses back.
+    // In these situations, data would be received that is not connected to a tag transaction event. This looks like an "unsolicited" data receipt
+    // and the driver will call the onData without any tags.
+
+    // Since HTTP is solicited, this will assume that any responses without a tag in the transaction will be ignored.
+
+    if (info.tags == undefined){
+        log(`onData - info.tags does not exist. Info: ${JSON.stringify(info)}`, DEBUG_LOGGING)
+
+        log(`ERROR - Unexpected data received without a tag request. Possibly an extra response from a retry event.`)
+
+        // reset cache of http_response info
+        // This preps for the next message transaction to be received 
+        http_response.reset()
+        
+        return { action: ACTIONCOMPLETE }
+    }
+
     let tags = info.tags;
 
     // Convert the response to a string
@@ -321,17 +344,33 @@ function onData(info) {
 
     // Process HTTP payload message. When the result is true, this indicates that the complete HTTP message has been processed
     // Otherwise a return object to send back to the UDD driver is returned to either get more of the HTTP paylod or indicate a failure
-    let status = http_response.processHTTPmsg(stringResponse)
+    let status = null
+    try {
+        status = http_response.processHTTPmsg(stringResponse)
+    }
+    catch(err)
+    {
+        log(`ERROR - Processing message for HTTP response with processHTTPmsg() failure. Msg: ${err}`)
+        // reset cache of http_response info after completing processing the whole message. 
+        // This preps for the next message transaction to be received 
+        http_response.reset()
+
+        // Action is completed but not returning tags puts tag value associated with onData request into bad quality.
+        return { action: ACTIONCOMPLETE }
+    }
+
+    // If processing HTTP message isn't complete, returned status will wait for more data from the network
     if (status !== true) { return status }
 
     // After receiving full message, verify response code
     if(http_response.getResponseCode() !== 200) {
         // FAILURE - Non successful response from HTTP server
-        log(`ERROR: onData - Received HTTP Code ${http_response.getResponseCode()}; Message: ${JSON.stringify(http_response.msg)}`)
+        log(`ERROR: Failed HTTP response. Received HTTP Response Code ${http_response.getResponseCode()}; Reason: ${http_response.headers['reason']}; Message: ${http_response.msg}`)
         
-        // reset cache of http_response info
+        // reset cache of http_response info in the event of a failure
         http_response.reset()
-        return { action: ACTIONFAILURE }
+        // Action is completed but not returning tags puts tag value associated with onData request into bad quality.
+        return { action: ACTIONCOMPLETE }
     }
 
     // Get the JSON body of the response
@@ -391,18 +430,19 @@ function onData(info) {
             break;
         default:
             log(`onData - ERROR - Unknown address ${tags[0].address} received`)
-            return { action: ACTIONCOMPLETE };
+            result = false;
     }
-
-    // check to see if result failed from data check
-    if (result === false){
-        return { action: ACTIONFAILURE };
-    }
-    writeToCache(tags[0].address, result)
-    tags[0].value = result
 
     // reset cache of http_response info
     http_response.reset()
+
+    // check to see if result failed from data check
+    if (result === false){
+        // Don't return tags to set tag in transaction to bad quality.
+        return { action: ACTIONCOMPLETE };
+    }
+    writeToCache(tags[0].address, result)
+    tags[0].value = result
 
     return { action: ACTIONCOMPLETE, tags: tags};
 
@@ -550,14 +590,14 @@ class HttpRequest {
  * Handles data processing of single and multi-packet responses, supporting responses
  * identifeid as chunked or content lengths beyond a single transport payload size.
  * 
- * * Properties:
+ * Properties:
  * @param {Object} headers - JSON object of the HTTP headers from the response message
  * @param {String} msg - payload or message body from the response message
  * 
  * Methods:
  * @method processHTTPmsg - processes HTTP message to determine if the complete message is received or not.
  *****************************************************************************************************/
- class HttpResponse {
+class HttpResponse {
     #HTTP_HEADER_TERMINATOR = '\r\n'
     #CHUNKED_TERMINATOR = '\r\n'
     constructor () {
@@ -579,6 +619,9 @@ class HttpRequest {
      * @param {String} stringResponse - string value from the message data received from the UDD driver 
      * @returns {true | action response} - will return true if the complete HTTP message has been received or 
      *                                      actions to listen for more data from the UDD driver
+     * 
+    * Exceptions:
+    * @throws {string} - Error message if processing fails
      */
     processHTTPmsg(stringResponse) {
         this.unprocessed = this.unprocessed.concat(...stringResponse)
@@ -655,21 +698,24 @@ class HttpRequest {
      * Parses HTTP Header
      * @param {string} msg 
      * @returns {object} JSON Object of Header parameters
+     * 
+     * @throws {string} error message thrown if header parsing fails
      */
     #parseHTTPHeader(msg) {
         let header = {}
         let fields = msg.split(this.#HTTP_HEADER_TERMINATOR)
 
         // Parse status field of HTTP header to access response code and reason information
-        let regex = /^(?:HTTP\/)\d[.]\d[ ]\d+[ ]\w+$/
-        if(regex.test(fields[0])) {
-            let status_split = fields[0].split(/[ ]/)
-            header['version'] = status_split[0];
-            header['response_code'] = parseInt(status_split[1]);
-            header['reason'] = status_split[2];
+        let regex = /^((?:HTTP\/)\d[.]\d)[ ](\d+)[ ]([\w| ]+)$/
+        let status_split = regex.exec(fields[0])
+        if(status_split !== null) {
+            header['version'] = status_split[1];
+            header['response_code'] = parseInt(status_split[2]);
+            header['reason'] = status_split[3];
         }
         else {
-            header['version'] = fields[0]
+            // header['version'] = fields[0]
+            throw "HEADER PARSE FAILURE"
         }
 
         // Parse rest of header into keys/values

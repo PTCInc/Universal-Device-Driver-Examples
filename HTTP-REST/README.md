@@ -9,7 +9,7 @@ These are various examples of UDD profiles that can create simple HTTP/RESTful c
 
 These could be extended to add additional functionality as needed to support other methods or scenarios.
 
-**NOTE:** Since these are not fully functional HTTP client examples, encrypted connections **CANNOT** be supported.
+**NOTE:** Since these are not fully functional HTTP client examples, encrypted connections (HTTPS) **CANNOT** be supported.
 
 ## Requirements
 
@@ -52,3 +52,23 @@ Example JSON:
 | visibility | 1000 |
 | wind | {"speed": 8.38, "direction": "north"} |
 | weather[1]:main | cloudy |
+
+```json
+{
+    "readResults": [
+        {
+            "id": "Machine.Device.Tempo1-iVariant",
+            "s": true,
+            "r": "",
+            "v": 0,
+            "t": 1651773774273
+        }
+    ]
+}
+```
+
+|Tag Address|Value from Example|
+| :----------:  | :----------:  |
+| readResults | [ {"id": "Machine.Device.Tempo1-iVariant", "s": true, "r": "", "v": 0, "t": 1651773774273}] |
+| readResults[0] | {"id": "Machine.Device.Tempo1-iVariant", "s": true, "r": "", "v": 0, "t": 1651773774273} |
+| readResults[0]:v | 0 |
