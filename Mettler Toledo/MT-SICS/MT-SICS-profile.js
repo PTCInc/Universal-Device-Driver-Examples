@@ -13,10 +13,14 @@
  * Developed against a IND780 model indicator with SICS set to serial interface with a serial 
  * to Ethernet convertor.
  * 
- * Developed on Kepware Server version 6.12, UDD V2.0
+ * Developed on Kepware Server version 6.14, UDD V2.0
  * 
+ * Update History:
+ * 0.1.0:   Initial Release
+ * 1.0.0:   Updated for bulk tag processing feature added to Kepware 6.14
+ *          Updated for tag quality feature added to Kepware 6.14
  * 
- * Version: 0.1.0
+ * Version: 1.0.0
 ******************************************************************************/
 /**
  * @typedef {string} MessageType - Type of communication "Read", "Write".
@@ -35,12 +39,14 @@
  * @property {string}   Tag.address  - Tag address.
  * @property {DataType} Tag.dataType - Kepware data type.
  * @property {boolean}  Tag.readOnly - Indicates permitted communication mode.
+ * @property {number}  Tag.bulkId   - (optional) Integer that identifies the group into which to bulk the tag with other tags.
  */ 
  
  /**
  * @typedef {object} CompleteTag
  * @property {string}   Tag.address  - Tag address.
  * @property {*}        Tag.value    - (optional) Tag value.
+ * @property {string}   Tag.quality  - (optional) Quality of Tag: "Good", "Bad", "Uncertain"
  */
 
 /**
@@ -54,6 +60,9 @@
  * @property {string}   address     - (optional) Fixed up tag address.
  * @property {DataType} dataType    - (optional) Fixed up Kepware data type. Required if input dataType is "Default".
  * @property {boolean}  readOnly    - (optional) Fixed up permitted communication mode.
+ * @property {number}  bulkId      - (optional) Integer that identifies the group into which to bulk the tag with other tags.
+ *                                    Universal Device Driver assigns the next available bulkId, if undefined. If defined for one tag,
+ *                                    must define for all tags.
  * @property {boolean}  valid       - Indicates address validity.
  */ 
 
@@ -101,6 +110,13 @@ const data_types = {
     QWORD: "QWord" 
 }
 
+// Global variable for tag quality options
+const TAGQUALITY = {
+    GOOD: 'Good',
+    BAD: 'Bad',
+    UNCERTAIN: 'Uncertain'
+}
+
 /** SICS Constants **/
 const SICS_TERMINATOR = '\r\n';
 const RESPONSESTATUS = {
@@ -130,37 +146,109 @@ const LEVEL0_TAGS_LIST = {
     "I1": {
         command: 'I1',
         dataType: data_types.STRING,
+        bulkId: 10,
         readOnly: true
-    }, 
+    },
+    "I1:Levels": {
+        command: 'I1',
+        dataType: data_types.STRING,
+        bulkId: 10,
+        readOnly: true,
+        offset: 0
+    },
+    "I1:L0_Version": {
+        command: 'I1',
+        dataType: data_types.STRING,
+        bulkId: 10,
+        readOnly: true,
+        offset: 1
+    },
+    "I1:L1_Version": {
+        command: 'I1',
+        dataType: data_types.STRING,
+        bulkId: 10,
+        readOnly: true,
+        offset: 2
+    },
+    "I1:L2_Version": {
+        command: 'I1',
+        dataType: data_types.STRING,
+        bulkId: 10,
+        readOnly: true,
+        offset: 3
+    },
+    "I1:L3_Version": {
+        command: 'I1',
+        dataType: data_types.STRING,
+        bulkId: 10,
+        readOnly: true,
+        offset: 4
+    },
     "I2": {
         command: 'I2',
         dataType: data_types.STRING,
+        bulkId: 20,
         readOnly: true
     }, 
     "I3": {
         command: 'I3',
         dataType: data_types.STRING,
+        bulkId: 30,
         readOnly: true
+    },
+    "I3:SW_version": {
+        command: 'I3',
+        dataType: data_types.STRING,
+        bulkId: 30,
+        readOnly: true,
+        offset: 0
+    },
+    "I3:TypeDefNumber": {
+        command: 'I3',
+        dataType: data_types.STRING,
+        bulkId: 30,
+        readOnly: true,
+        offset: 1
     },
     "I4": {
         command: 'I4',
         dataType: data_types.STRING,
+        bulkId: 40,
         readOnly: true
     }, 
     "I5": {
         command: 'I5',
         dataType: data_types.STRING,
+        bulkId: 50,
         readOnly: true
     },
     "S": {
         command: 'S',
         dataType: data_types.FLOAT,
-        readOnly: true
+        bulkId: 60,
+        readOnly: true,
+        offset: 0
+    },
+    "S:Unit": {
+        command: 'S',
+        dataType: data_types.STRING,
+        bulkId: 60,
+        readOnly: true,
+        offset: 1
     },
     "SI": {
         command: 'SI',
         dataType: data_types.FLOAT,
-        readOnly: true
+        bulkId: 70,
+        readOnly: true,
+        offset: 0
+    },
+    "SI:Unit": {
+        command: 'SI',
+        dataType: data_types.STRING,
+        bulkId: 70,
+        readOnly: true,
+        offset: 1
     },
     // TODO: SIR implementation - SIR is a subscription based call. Returns values periodically.
     // "SIR": {
@@ -171,16 +259,19 @@ const LEVEL0_TAGS_LIST = {
     "Z": {
         command: 'Z',
         dataType: data_types.BOOLEAN,
+        bulkId: 90,
         readOnly: false
     },
     "ZI": {
         command: 'ZI',
         dataType: data_types.BOOLEAN,
+        bulkId: 91,
         readOnly: false
     },
     "@": {
         command: '@',
         dataType: data_types.BOOLEAN,
+        bulkId: 92,
         readOnly: false
     },
 }
@@ -189,39 +280,55 @@ const LEVEL1_TAGS_LIST = {
     // "D": {
     //     command: 'D',
     //     dataType: data_types.STRING,
+    //     bulkId: 100,
     //     readOnly: false
     // }, 
     "DW": {
         command: 'DW',
         dataType: data_types.BOOLEAN,
+        bulkId: 110,
         readOnly: false
     },
     // "K": {
     //     dataType: data_types.STRING,
+    //     bulkId: 120,
     //     readOnly: false
     // }, 
     // "SR": {
     //     dataType: data_types.FLOAT,
+    //     bulkId: 130,
     //     readOnly: false
     // }, 
     "T": {
         command: 'T',
         dataType: data_types.BOOLEAN,
+        bulkId: 140,
         readOnly: false
     },
     "TA": {
         command: 'TA',
         dataType: data_types.FLOAT,
-        readOnly: true
+        bulkId: 150,
+        readOnly: true,
+        offset: 0
+    },
+    "TA:Unit": {
+        command: 'TA',
+        dataType: data_types.STRING,
+        bulkId: 150,
+        readOnly: true,
+        offset: 1
     },
     "TAC": {
         command: 'TAC',
         dataType: data_types.BOOLEAN,
+        bulkId: 160,
         readOnly: false
     },
     "TI": {
         command: 'TI',
         dataType: data_types.BOOLEAN,
+        bulkId: 170,
         readOnly: false
     },
 }
@@ -231,20 +338,21 @@ const write_only_list = ['Z', 'ZI', '@', 'DW', 'T', 'TAC', 'TI']
 
 /**
  * Logging Level System tag - control logging level from client application
- * This can be used to avoid logging verbose SDS protocol messages unless 
+ * This can be used to avoid logging verbose UDD log messages unless 
  * needed for debugging
  */
 
- const LOGGING_LEVEL_TAG = {
+const LOGGING_LEVEL_TAG = {
     address: "LoggingLevel",
     dataType: data_types.WORD,
+    bulkId: 9999,
     readOnly: false,
 }
 const STD_LOGGING = 0;
 const VERBOSE_LOGGING = 1;
 const DEBUG_LOGGING = 2;
 // Sets initial Logging Level
-const LOGGING_LEVEL = DEBUG_LOGGING;
+const LOGGING_LEVEL = STD_LOGGING;
 
 /** Captures the global log function so that it can be wrapped **/
 let originalLogFunction = log;
@@ -319,6 +427,7 @@ function onProfileLoad() {
 
     if (info.tag.address in tag_list) {
         info.tag.valid = true;
+        info.tag.bulkId = tag_list[info.tag.address].bulkId;
         info.tag.dataType = tag_list[info.tag.address].dataType;
         info.tag.readOnly = tag_list[info.tag.address].readOnly;
     } 
@@ -345,7 +454,7 @@ function onProfileLoad() {
  function onTagsRequest(info) {
     log(`onTagsRequest - info: ${JSON.stringify(info)}`, VERBOSE_LOGGING)
 
-     // Currently only will receive one tag at a time
+     // Use First tag in list to identify the command/bulkID group
      let tag = info.tags[0];
 
     // Check if tag is LoggingLevel, update from cached value
@@ -459,7 +568,7 @@ function onData(info) {
 
     let responseID = responseData[0]
 
-    // Currently only will receive one tag at a time
+    // Use first tag item to confirm command
     let tag = info.tags[0];
 
     if (SICSERRORS.hasOwnProperty(responseID)) {
@@ -511,120 +620,165 @@ function onData(info) {
                 case 'I1':
                     switch(responseStatus) {
                         case RESPONSESTATUS.ACK:
-                            let value = responseValue.join(' ')
-                            tag.value = value
-                            returnAction = { action: ACTIONCOMPLETE, tags: info.tags}
+                            info.tags.forEach(tagItem => {
+                                if (tagItem.address == 'I1'){
+                                    tagItem.value = responseValue.join(' ')
+                                }
+                                else {
+                                    tagItem.value = responseValue[tag_list[tagItem.address].offset].replaceAll('\"', '')
+                                }
+                                tagItem.quality = TAGQUALITY.GOOD
+                            });
                             break;
                         case RESPONSESTATUS.NACK:
                             log(`ERROR: Unable to perform SICS Level and Versions read command.`)
-                            returnAction = { action: ACTIONCOMPLETE }
+                            info.tags.forEach(tagItem => {
+                                tagItem.quality = TAGQUALITY.BAD
+                            });
                             break;
+                        
                     }
+                    returnAction = { action: ACTIONCOMPLETE, tags: info.tags }
                     break;
                 case 'I2':
                     switch(responseStatus) {
                         case RESPONSESTATUS.ACK:
                             let value = responseValue.join(' ')
                             tag.value = value
-                            returnAction = { action: ACTIONCOMPLETE, tags: info.tags}
+                            tag.quality = TAGQUALITY.GOOD
                             break;
                         case RESPONSESTATUS.NACK:
                             log(`ERROR: Unable to perform Balance Data read command.`)
-                            returnAction = { action: ACTIONCOMPLETE }
+                            tag.quality = TAGQUALITY.BAD
                             break;
                     }
+                    returnAction = { action: ACTIONCOMPLETE, tags: info.tags}
                     break;
                 case 'I3':
                     switch(responseStatus) {
                         case RESPONSESTATUS.ACK:
-                            let value = responseValue.join(' ')
-                            tag.value = value
-                            returnAction = { action: ACTIONCOMPLETE, tags: info.tags}
+                            info.tags.forEach(tagItem => {
+                                if (tagItem.address == 'I3'){
+                                    tagItem.value = responseValue.join(' ')
+                                }
+                                else {
+                                    tagItem.value = responseValue[tag_list[tagItem.address].offset].replaceAll('\"', '')
+                                }
+                                tagItem.quality = TAGQUALITY.GOOD
+                            });
                             break;
                         case RESPONSESTATUS.NACK:
                             log(`ERROR: Unable to perform SW Version and Type Definition read command.`)
-                            returnAction = { action: ACTIONCOMPLETE }
+                            info.tags.forEach(tagItem => {
+                                tagItem.quality = TAGQUALITY.BAD
+                            });
                             break;
                     }
+                    returnAction = { action: ACTIONCOMPLETE, tags: info.tags}
                     break;
                 case 'I4':
                     switch(responseStatus) {
                         case RESPONSESTATUS.ACK:
                             let value = responseValue.join(' ')
                             tag.value = value
-                            returnAction = { action: ACTIONCOMPLETE, tags: info.tags}
+                            tag.quality = TAGQUALITY.GOOD
                             break;
                         case RESPONSESTATUS.NACK:
                             log(`ERROR: Unable to perform Serial Number read command.`)
-                            returnAction = { action: ACTIONCOMPLETE }
+                            tag.quality = TAGQUALITY.BAD
                             break;
                     }
+                    returnAction = { action: ACTIONCOMPLETE, tags: info.tags}
                     break;
                 case 'I5':
                     switch(responseStatus) {
                         case RESPONSESTATUS.ACK:
                             let value = responseValue.join(' ')
                             tag.value = value
-                            returnAction = { action: ACTIONCOMPLETE, tags: info.tags}
+                            tag.quality = TAGQUALITY.GOOD
                             break;
                         case RESPONSESTATUS.NACK:
                             log(`ERROR: Unable to perform SW Identification Number read command.`)
-                            returnAction = { action: ACTIONCOMPLETE }
+                            tag.quality = TAGQUALITY.BAD
                             break;
                     }
+                    returnAction = { action: ACTIONCOMPLETE, tags: info.tags}
                     break;
                 case 'S':
                     switch(responseStatus) {
                         case RESPONSESTATUS.STABLE:
-                            tag.value = responseValue[0]
-                            returnAction = { action: ACTIONCOMPLETE, tags: info.tags}
+                            info.tags.forEach(tagItem => {
+                                tagItem.value = responseValue[tag_list[tagItem.address].offset]
+                                tagItem.quality = TAGQUALITY.GOOD
+                            });
                             break;
                         case RESPONSESTATUS.NACK:
                             log(`ERROR: Unable to perform Stable Weight read command.`)
-                            returnAction = { action: ACTIONCOMPLETE }
+                            info.tags.forEach(tagItem => {
+                                tagItem.quality = TAGQUALITY.BAD
+                            });
                             break;
                         case RESPONSESTATUS.OVER:
                             log(`ERROR: Overload range of Stable Weight during read.`)
-                            returnAction = { action: ACTIONCOMPLETE }
+                            info.tags.forEach(tagItem => {
+                                tagItem.quality = TAGQUALITY.BAD
+                            });
                             break;
                         case RESPONSESTATUS.UNDER:
                             log(`ERROR: Underload range of Stable Weight during read.`)
-                            returnAction = { action: ACTIONCOMPLETE }
+                            info.tags.forEach(tagItem => {
+                                tagItem.quality = TAGQUALITY.BAD
+                            });
                             break;
-                    } 
+                    }
+                    returnAction = { action: ACTIONCOMPLETE, tags: info.tags} 
                     break;
                 case 'SI':
                     switch(responseStatus) {
                         case RESPONSESTATUS.DYNAMIC:
                         case RESPONSESTATUS.STABLE:
-                            tag.value = responseValue[0]
-                            returnAction = { action: ACTIONCOMPLETE, tags: info.tags}
+                            info.tags.forEach(tagItem => {
+                                tagItem.value = responseValue[tag_list[tagItem.address].offset]
+                                tagItem.quality = TAGQUALITY.GOOD
+                            });
                             break;
                         case RESPONSESTATUS.NACK:
                             log(`ERROR: Unable to perform Stable Weight Immediate read command.`)
-                            returnAction = { action: ACTIONCOMPLETE }
+                            info.tags.forEach(tagItem => {
+                                tagItem.quality = TAGQUALITY.BAD
+                            });
                             break;
                         case RESPONSESTATUS.OVER:
                             log(`ERROR: Overload range of Stable Weight Immediate during read.`)
-                            returnAction = { action: ACTIONCOMPLETE }
+                            info.tags.forEach(tagItem => {
+                                tagItem.quality = TAGQUALITY.BAD
+                            });
                             break;
                         case RESPONSESTATUS.UNDER:
                             log(`ERROR: Underload range of Stable Weight Immediate during read.`)
-                            returnAction = { action: ACTIONCOMPLETE }
+                            info.tags.forEach(tagItem => {
+                                tagItem.quality = TAGQUALITY.BAD
+                            });
                             break;
-                    } 
+                    }
+                    returnAction = { action: ACTIONCOMPLETE, tags: info.tags} 
                     break;
                 case 'TA':
                     switch(responseStatus) {
                         case RESPONSESTATUS.ACK:
-                            tag.value = responseValue[0]
-                            returnAction = { action: ACTIONCOMPLETE, tags: info.tags}
+                            info.tags.forEach(tagItem => {
+                                tagItem.value = responseValue[tag_list[tagItem.address].offset]
+                                tagItem.quality = TAGQUALITY.GOOD
+                            });
                             break;
                         case RESPONSESTATUS.NACK:
                             log(`ERROR: Unable to perform Tare Weight Value read command.`)
-                            returnAction = { action: ACTIONCOMPLETE }
+                            info.tags.forEach(tagItem => {
+                                tagItem.quality = TAGQUALITY.BAD
+                            });
                             break;
                     }
+                    returnAction = { action: ACTIONCOMPLETE, tags: info.tags}
                     break;
                 default:
                     log(`ERROR: onTagRequest - Unexpected error. SICS command type unknown: ${tag_list[tag.address].command}`);
@@ -804,13 +958,11 @@ function onData(info) {
  * @returns {Tag} LoggingLevel Tag validation results
  */
 
- function validateLoggingTag(tag) {
-    if (tag.dataType === data_types.DEFAULT){
-        tag.dataType = data_types.WORD
-    }
-    tag.readOnly = false;
+function validateLoggingTag(tag) {
+    tag.dataType = LOGGING_LEVEL_TAG.dataType
+    tag.bulkId = LOGGING_LEVEL_TAG.bulkId
+    tag.readOnly = LOGGING_LEVEL_TAG.readOnly;
     tag.valid = true;
-
     return tag
 }
 
