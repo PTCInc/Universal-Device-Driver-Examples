@@ -10,10 +10,14 @@
  * 
  * Developed against a QT50L-ETN model.
  * 
- * Developed on Kepware Server version 6.13, UDD V2.0
+ * Developed on Kepware Server version 6.14, UDD V2.0
  * 
+ * Update History:
+ * 0.1.0:   Initial Release
+ * 1.0.0:   Updated for bulk tag processing feature added to Kepware 6.14
+ *          Updated for tag quality feature added to Kepware 6.14
  * 
- * Version: 0.1.0
+ * Version: 1.0.0
 ******************************************************************************/
 /**
  * @typedef {string} MessageType - Type of communication "Read", "Write".
@@ -32,12 +36,14 @@
  * @property {string}   Tag.address  - Tag address.
  * @property {DataType} Tag.dataType - Kepware data type.
  * @property {boolean}  Tag.readOnly - Indicates permitted communication mode.
+ * @property {number}  Tag.bulkId   - (optional) Integer that identifies the group into which to bulk the tag with other tags.
  */ 
  
  /**
  * @typedef {object} CompleteTag
  * @property {string}   Tag.address  - Tag address.
  * @property {*}        Tag.value    - (optional) Tag value.
+ * @property {string}   Tag.quality  - (optional) Quality of Tag: "Good", "Bad", "Uncertain"
  */
 
 /**
@@ -51,6 +57,9 @@
  * @property {string}   address     - (optional) Fixed up tag address.
  * @property {DataType} dataType    - (optional) Fixed up Kepware data type. Required if input dataType is "Default".
  * @property {boolean}  readOnly    - (optional) Fixed up permitted communication mode.
+ * @property {number}  bulkId      - (optional) Integer that identifies the group into which to bulk the tag with other tags.
+ *                                    Universal Device Driver assigns the next available bulkId, if undefined. If defined for one tag,
+ *                                    must define for all tags.
  * @property {boolean}  valid       - Indicates address validity.
  */ 
 
@@ -98,6 +107,13 @@ const data_types = {
     QWORD: "QWord" 
 }
 
+// Global variable for tag quality options
+const TAGQUALITY = {
+    GOOD: 'Good',
+    BAD: 'BAD',
+    UNCERTAIN: 'Uncertain'
+}
+
 /** Qlight Socket Constants **/
 const RESPONSESTATUS = {
     ACK: 'A',
@@ -121,69 +137,81 @@ const COMMANDS = {
  */
 const DEFAULTMSG = [0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
 
-
+// Define valid values for Lamp and Sound states returned from andon light. This
+// will be used to check for values returned from light
+const LAMPVALIDVALUES = [0, 1, 2]
+const SOUNDVALIDVALUES = [0, 1, 2, 3, 4, 5]
 
 /** Defined Tag Addresses **/
 const TAGS_LIST = {
     "red": {
         offset: 2,
         dataType: data_types.WORD,
-        readOnly: false
+        bulkId: 1,
+        readOnly: false,
+        validValues: LAMPVALIDVALUES
     }, 
     "yellow": {
         offset: 3,
         dataType: data_types.WORD,
-        readOnly: false
+        bulkId: 1,
+        readOnly: false,
+        validValues: LAMPVALIDVALUES
     }, 
     "green": {
         offset: 4,
         dataType: data_types.WORD,
-        readOnly: false
+        bulkId: 1,
+        readOnly: false,
+        validValues: LAMPVALIDVALUES
     },
     "blue": {
         offset: 5,
         dataType: data_types.WORD,
-        readOnly: false
+        bulkId: 1,
+        readOnly: false,
+        validValues: LAMPVALIDVALUES
     }, 
     "white": {
         offset: 6,
         dataType: data_types.WORD,
-        readOnly: false
+        bulkId: 1,
+        readOnly: false,
+        validValues: LAMPVALIDVALUES
     },
     "sound": {
         offset: 7,
         dataType: data_types.WORD,
-        readOnly: false
+        bulkId: 1,
+        readOnly: false,
+        validValues: SOUNDVALIDVALUES
     },
     "soundtype": {
         offset: 1,
         dataType: data_types.WORD,
-        readOnly: false
+        bulkId: 1,
+        readOnly: false,
+        validValues: SOUNDVALIDVALUES
     },
     // Used to reset all indicators and sounds. Provides no tag value.
     "reset": {
         msg: [0x57, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
         dataType: data_types.BOOLEAN,
+        bulkId: 2,
         readOnly: false
     },
 }
 
 /**
- * Since UDD v2.0 doesn't have "blocking" requests, the profile uses a read request of the red status
- * to trigger when the read request message gets populated
- */ 
-
-const TRIGGERTAG = 'red'
-
-/**
  * Logging Level System tag - control logging level from client application
- * This can be used to avoid logging verbose SDS protocol messages unless 
+ * This can be used to avoid logging verbose UDD log messages unless 
  * needed for debugging
  */
 
- const LOGGING_LEVEL_TAG = {
+const LOGGING_LEVEL_TAG = {
     address: "LoggingLevel",
     dataType: data_types.WORD,
+    bulkId: 9999,
     readOnly: false,
 }
 const STD_LOGGING = 0;
@@ -263,6 +291,7 @@ function onProfileLoad() {
 
     if (info.tag.address in TAGS_LIST) {
         info.tag.valid = true;
+        info.tag.bulkId = TAGS_LIST[info.tag.address].bulkId;
         info.tag.dataType = TAGS_LIST[info.tag.address].dataType;
         info.tag.readOnly = TAGS_LIST[info.tag.address].readOnly;
     } 
@@ -272,7 +301,7 @@ function onProfileLoad() {
         return info.tag;
     }
     
-    log(`onValidateTag - address "${info.tag.address}" is valid.`, VERBOSE_LOGGING)
+    log(`onValidateTag - address "${JSON.stringify(info)}" is valid.`, VERBOSE_LOGGING)
     return info.tag;
 }
 
@@ -289,8 +318,8 @@ function onProfileLoad() {
  function onTagsRequest(info) {
     log(`onTagsRequest - info: ${JSON.stringify(info)}`, VERBOSE_LOGGING)
 
-     // Currently only will receive one tag at a time
-     let tag = info.tags[0];
+    // Use First tag in list to identify the command/bulkID group
+    let tag = info.tags[0];
 
     // Check if tag is LoggingLevel, update from cached value
     if (tag.address === LOGGING_LEVEL_TAG.address){
@@ -300,8 +329,8 @@ function onProfileLoad() {
     switch(info.type){
         // Read Request Handling
         case READ:
-            // Only Send Request if it's the TRIGGERTAG that is being requested
-            if (tag.address === TRIGGERTAG) {
+            // BulkId 1 is used to read all the light and sound statuses from the device
+            if (tag.bulkId === 1) {
                 let readFrame = [...DEFAULTMSG]
                 
                 // Update Command byte Read Command
@@ -309,18 +338,23 @@ function onProfileLoad() {
                 log(`onTagsRequest - readFrame: ${readFrame}`, DEBUG_LOGGING)
                 return { action: ACTIONRECEIVE, data: readFrame }
             }
-            // All other tags will be update via cache.
+            // All other tags will be updated via cache.
             else {
-                tag.value = readFromCache(tag.address).value
+                info.tags.forEach(tag => {
+                    tag.value = readFromCache(tag.address).value
+                });
                 return { action: ACTIONCOMPLETE, tags: info.tags}
             }
         // Write Request Handling
         case WRITE:
+
+            //Reset Command 
             if (tag.address === 'reset') {
                 log(`onTagsRequest - writeFrame: ${TAGS_LIST[tag.address].msg}`, DEBUG_LOGGING);
                 return { action: ACTIONRECEIVE, data: TAGS_LIST[tag.address].msg };
             }
-        
+            
+            // All Other light and sound commands are handled below
             if (tag.value > 255){
                 tag.value = 255;
             }
@@ -369,17 +403,27 @@ function onData(info) {
         return { action: ACTIONCOMPLETE }
     }
 
-    // Currently only will receive one tag at a time
-    let tag = info.tags[0];
-
     switch (info.type) {
         case READ:
-        case WRITE:
-            Object.keys(TAGS_LIST).forEach(key => {
-                writeToCache(key, inboundData[TAGS_LIST[key].offset])
+            // Go through all the tags for the transaction, validate the returned value and update tag values as needed
+            info.tags.forEach(tag => {
+                let valueReceived = inboundData[TAGS_LIST[tag.address].offset];
+
+                // Check to see if returned value is within the expected states of the signal
+                // If not valid, set tag quality to "bad"
+                if (TAGS_LIST[tag.address].validValues.includes(valueReceived)) {
+                    tag.value = inboundData[TAGS_LIST[tag.address].offset];
+                    tag.quality = TAGQUALITY.GOOD
+                }
+                else {
+                    tag.quality = TAGQUALITY.BAD
+                }
+                
             });
-            tag.value = readFromCache(tag.address).value
+            // tag.value = readFromCache(tag.address).value
             return { action: ACTIONCOMPLETE, tags: info.tags }
+        case WRITE:
+            return { action: ACTIONCOMPLETE }
         default:
             log(`ERROR: onData - Unexpected error. Command type unknown: ${info.type}`);
             return {action: ACTIONFAILURE};
@@ -411,13 +455,11 @@ function onData(info) {
  * @returns {Tag} LoggingLevel Tag validation results
  */
 
- function validateLoggingTag(tag) {
-    if (tag.dataType === data_types.DEFAULT){
-        tag.dataType = data_types.WORD
-    }
-    tag.readOnly = false;
+function validateLoggingTag(tag) {
+    tag.dataType = LOGGING_LEVEL_TAG.dataType
+    tag.bulkId = LOGGING_LEVEL_TAG.bulkId
+    tag.readOnly = LOGGING_LEVEL_TAG.readOnly;
     tag.valid = true;
-
     return tag
 }
 
