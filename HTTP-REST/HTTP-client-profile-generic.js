@@ -9,7 +9,7 @@
  * 
  * Generic HTTP client to show how to use the HttpRequest and HttpResponse classes
  * 
- * Developed on Kepware Server version 6.13, UDD V2.0
+ * Developed on Kepware Server version 6.14, UDD V2.0
  * 
  * Update History:
  * 0.1.2:   Added handling for incomplete HTTP headers in response.
@@ -18,9 +18,9 @@
  * 0.1.4:   Fixed HTTP reason code and description parsing. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/21
  *          Added handling for potential extra responses received during retry 
  *              process https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/16
- * 
- * 
- * Version:     0.1.4
+ * 1.0.0:   Updated for bulk tag processing feature added to Kepware 6.14
+ *          Updated for tag quality feature added to Kepware 6.14
+ * Version:     1.0.0
 ******************************************************************************/
 /**
  * @typedef {string} MessageType - Type of communication "Read", "Write".
@@ -39,12 +39,14 @@
  * @property {string}   Tag.address  - Tag address.
  * @property {DataType} Tag.dataType - Kepware data type.
  * @property {boolean}  Tag.readOnly - Indicates permitted communication mode.
+ * @property {number}  Tag.bulkId   - (optional) Integer that identifies the group into which to bulk the tag with other tags.
  */ 
  
  /**
  * @typedef {object} CompleteTag
  * @property {string}   Tag.address  - Tag address.
  * @property {*}        Tag.value    - (optional) Tag value.
+ * @property {string}   Tag.quality  - (optional) Quality of Tag: "Good", "Bad", "Uncertain"
  */
 
 /**
@@ -58,6 +60,9 @@
  * @property {string}   address     - (optional) Fixed up tag address.
  * @property {DataType} dataType    - (optional) Fixed up Kepware data type. Required if input dataType is "Default".
  * @property {boolean}  readOnly    - (optional) Fixed up permitted communication mode.
+ * @property {number}  bulkId      - (optional) Integer that identifies the group into which to bulk the tag with other tags.
+ *                                    Universal Device Driver assigns the next available bulkId, if undefined. If defined for one tag,
+ *                                    must define for all tags.
  * @property {boolean}  valid       - Indicates address validity.
  */ 
 
@@ -102,6 +107,13 @@ const data_types = {
     QWORD: "QWord" 
 }
 
+// Global variable for tag quality options
+const TAGQUALITY = {
+    GOOD: 'Good',
+    BAD: 'Bad',
+    UNCERTAIN: 'Uncertain'
+}
+
 /** HTTP Global variables */
 // Method object to use when building messages. Expand as necessary for PUT or DELETE
 const METHOD = {
@@ -114,13 +126,14 @@ var http_response = null
 
 /**
  * Logging Level System tag - control logging level from client application
- * This can be used to avoid logging verbose SDS protocol messages unless 
+ * This can be used to avoid logging verbose UDD log messages unless 
  * needed for debugging
  */
 
- const LOGGING_LEVEL_TAG = {
+const LOGGING_LEVEL_TAG = {
     address: "LoggingLevel",
     dataType: data_types.WORD,
+    bulkId: 9999,
     readOnly: false,
 }
 const STD_LOGGING = 0;
@@ -209,6 +222,12 @@ function onValidateTag(info) {
         // Validate the address against the regular expression
         if (regex.test(info.tag.address)) {
             info.tag.valid = true;
+            
+            // All tags will be from a single API call, so they will be within the same
+            // bulkId group. If developing a profile that supports multiple API calls, 
+            // multiple bulkId groups will need to be managed.
+            info.tag.bulkId = 1;
+            
             // Fix the data type to the correct one
             if (info.tag.dataType === data_types.DEFAULT){
                 info.tag.dataType = data_types.STRING
@@ -253,42 +272,49 @@ function onTagsRequest(info) {
     
     switch(info.type){
         case READ:
-            http_request = new HttpRequest();
-            
-            // Configure parameters for building the HTTP Request
-            http_request.host = "localhost"; 
-            http_request.port = 80;
-            http_request.method = METHOD.GET;
+            // BulkId 1 is used to read API call for bulk tag group. Extend this check to validate
+            switch(info.tags[0].bulkId){
+                case 1:
+                    http_request = new HttpRequest();
+                    
+                    // Configure parameters for building the HTTP Request
+                    http_request.host = "localhost"; 
+                    http_request.port = 80;
+                    http_request.method = METHOD.GET;
 
-            // Path parameter is the relative path without the base host/IP. Defaults to '/'
-            // example: http://host/device1/read
-            // relative path: /device1/read
-            http_request.path = '/relative/path'
+                    // Path parameter is the relative path without the base host/IP. Defaults to '/'
+                    // example: http://host/device1/read
+                    // relative path: /device1/read
+                    http_request.path = '/relative/path'
 
-            // HTTP headers can be populated by JSON key value pairs. headers built with parameters will not be
-            // overwritten by these definitions
-            http_request.headers = {
-                // 'HeaderKey': 'headervalue',
+                    // HTTP headers can be populated by JSON key value pairs. headers built with parameters will not be
+                    // overwritten by these definitions
+                    http_request.headers = {
+                        // 'HeaderKey': 'headervalue',
+                    }
+
+                    // JSON payload for whatever REST API call needs to be implemented. In many cases this would be 
+                    // payloads based on the tag and action type provided from the UDD driver in the info data
+                    // object. Technically this could be a different object type (XML or plain text) depending on 
+                    // the REST API being targeted.
+                    let json = {
+                        'placeholder': "This is just a place holder for whatever JSON payload the user needs to implement"}
+                    let payload = JSON.stringify(json);
+
+                    // buildRequest method is used to take a string of the HTTP payload and convert it into the
+                    // appropriate byte array for the UDD driver to process and send to the endpoint.
+                    let request = http_request.buildRequest(payload)
+                    if (!request) {
+                        log(`ERROR: onTagRequest - http_request build failed for "${info.tags[0].address}"`)
+                        return { action: ACTIONFAILURE }
+                    }
+                    
+                    let readFrame = stringToBytes(request);
+                    return {action: ACTIONRECEIVE, data: readFrame};
+                default:
+                    // BulkId was not setup. Complete action and move on.
+                    return {action: ACTIONCOMPLETE}
             }
-
-            // JSON payload for whatever REST API call needs to be implemented. In many cases this would be 
-            // payloads based on the tag and action type provided from the UDD driver in the info data
-            // object. Technically this could be a different object type (XML or plain text) depending on 
-            // the REST API being targeted.
-            let json = {
-                'placeholder': "This is just a place holder for whatever JSON payload the user needs to implement"}
-            let payload = JSON.stringify(json);
-
-            // buildRequest method is used to take a string of the HTTP payload and convert it into the
-            // appropriate byte array for the UDD driver to process and send to the endpoint.
-            let request = http_request.buildRequest(payload)
-            if (!request) {
-                log(`ERROR: onTagRequest - http_request build failed for "${info.tags[0].address}"`)
-                return { action: ACTIONFAILURE }
-            }
-            
-            let readFrame = stringToBytes(request);
-            return {action: ACTIONRECEIVE, data: readFrame};
         case WRITE:
             // Tag Writes are not built into example/API but can be implemented
             log(`ERROR: onTagRequest - Write command for address "${info.tags[0].address}" is not supported`)
@@ -392,23 +418,27 @@ function onData(info) {
         tag.value = null;
         let value = get_value_from_payload(tag.address, jsonObj)
         log(`onData - Value found for address "${tag.address}": ${JSON.stringify(value)}`, VERBOSE_LOGGING)
-        // If the result is an object, then convert to string
+        
+        // If the result is an object not a individual value, then convert to string
         if(typeof(value) === 'object') {
             value = JSON.stringify(value)
         }
+
         tag.value = value
+
+        // Determine if value was not found in the payload
+        if (tag.value === undefined || tag.value === null) {
+            tag.quality = TAGQUALITY.BAD
+        }
+        else {
+            tag.quality = TAGQUALITY.GOOD
+        }
+        
     });
     
     // reset cache of http_response info after completing processing the whole message. 
     // This preps for the next message transaction to be received
     http_response.reset()
-
-    // Determine if value was not found in the payload
-    // If not, don't send tags object which will set tag to bad quality
-    if (tags[0].value === undefined || tags[0].value === null) {
-        log(`ERROR: Value for tag address "${tags[0].address}" not found in JSON payload`)
-        return { action: ACTIONCOMPLETE };
-    }
 
     return { action: ACTIONCOMPLETE, tags: tags };
 
@@ -761,13 +791,11 @@ function onData(info) {
  * @returns {Tag} LoggingLevel Tag validation results
  */
 
- function validateLoggingTag(tag) {
-    if (tag.dataType === data_types.DEFAULT){
-        tag.dataType = data_types.WORD
-    }
-    tag.readOnly = false;
+function validateLoggingTag(tag) {
+    tag.dataType = LOGGING_LEVEL_TAG.dataType
+    tag.bulkId = LOGGING_LEVEL_TAG.bulkId
+    tag.readOnly = LOGGING_LEVEL_TAG.readOnly;
     tag.valid = true;
-
     return tag
 }
 

@@ -13,7 +13,8 @@ These could be extended to add additional functionality as needed to support oth
 
 ## Requirements
 
-- Kepware versions 6.11 or higher that support the UDD v2.0 profile
+- Kepware versions 6.14 or higher that support the UDD v2.0 profile
+- Older versions that are not maintained can be found in the [archive](archive) folder
 
 ## Tag Configuration
 
