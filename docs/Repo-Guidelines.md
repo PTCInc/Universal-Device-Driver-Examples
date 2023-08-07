@@ -10,6 +10,8 @@ Profiles have versions, which follow the pattern: \<major>.\<minor>.\<update>, w
 
 If a profile is versioned as a beta version (\<major>.\<minor>.\<update>beta), this is an indication that it was initially developed using the documentation from the vendor and validated against precreated responses and NOT hardware. Once it has been validated against hardware, the beta label will be removed from the profile. If you would like to assist in testing against hardware, please reach out to us in the Discussions area of the repository to coordinate with the team.
 
+Device profiles may have legacy versions stored in folders labeled "archive". These are stored for reference as needed and not updated.
+
 ## Pull Requests
 
 Pull Requests can be created by any user wanting to contribute to the repo. The owners of the repo will approve pull requests as changes are reviewed and will determine if changes meet the intent of the repository.
