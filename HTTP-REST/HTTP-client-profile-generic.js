@@ -417,7 +417,7 @@ function onData(info) {
 
         tag.value = null;
         let value = get_value_from_payload(tag.address, jsonObj)
-        log(`onData - Value found for address "${tag.address}": ${JSON.stringify(value)}`, VERBOSE_LOGGING)
+        log(`onData - Value in payload at address "${tag.address}": ${JSON.stringify(value)}`, VERBOSE_LOGGING)
         
         // If the result is an object not a individual value, then convert to string
         if(typeof(value) === 'object') {
