@@ -3,76 +3,67 @@
  * This file is copyright (c) PTC, Inc.
  * All rights reserved.
  * 
- * Name:        HTTP-client-profile-generic
- * Description: A simple HTTP example profile that queries from a RESTful endpoint
- * that is expecting a JSON object returned in the response.
+ * Name:        dpm_pacemaker_preprocess.js
+ * Description: An example profile that can preprocess data from within Kepware. It uses 
+ * the IoT Gateway REST server to access tag data in Kepware, processes the values and updates
+ * tags within the UDD driver.
  * 
- * Generic HTTP client to show how to use the HttpRequest and HttpResponse classes
+ * This example specifically setups up standard parameters needed for preprocessing or recalculating
+ * raw values from the automation layer to be received by the DPM solution in Thingworx.
  * 
- * Developed on Kepware Server version 6.14, UDD V2.0
+ * 
+ * Developed on Kepware Server version 6.11, UDD V2.0
  * 
  * Update History:
  * 0.1.2:   Added handling for incomplete HTTP headers in response.
  * 0.1.3:   Fixed chunking message parsing error. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/18
  *          Added reset of http response buffer to handle failures/reconnects. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/15
- * 0.1.4:   Fixed HTTP reason code and description parsing. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/21
- *          Added handling for potential extra responses received during retry 
- *              process https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/16
- * 1.0.0:   Updated for bulk tag processing feature added to Kepware 6.14
- *          Updated for tag quality feature added to Kepware 6.14
- * Version:     1.0.0
+ * 
+ * Version:     0.1.3
 ******************************************************************************/
-/**
- * @typedef {string} MessageType - Type of communication "Read", "Write".
- */
 
 /**
- * @typedef {string} DataType - Kepware datatype "Default", "String", "Boolean", "Char", "Byte", "Short", "Word", "Long", "DWord", "Float", "Double", "BCD", "LBCD", "Date", "LLong", "QWord".
- */
-
-/**
- * @typedef {number[]} Data - Array of data bytes. Uint8 byte array.
- */
-
-/**
- * @typedef {object} Tag
+ * @typedef {object}    Tag
  * @property {string}   Tag.address  - Tag address.
- * @property {DataType} Tag.dataType - Kepware data type.
- * @property {boolean}  Tag.readOnly - Indicates permitted communication mode.
- * @property {number}  Tag.bulkId   - (optional) Integer that identifies the group into which to bulk the tag with other tags.
- */ 
+ * @property {DataType} Tag.dataType - Kepserver data type.
+ * @property {boolean}  Tag.readOnly - Indicates permitted communication mode(s).
+ * @property {boolean}  Tag.valid    - Indicates address validity.
+ * @property {*}        Tag.value    - Tag value. Only used in ParseMessage.
+ */
+
+/**
+ * @typedef {string} MessageType - Type of communication "Read", "Write"
+ */
+ 
+/**
+ * @typedef {number[]} Data - Array of data bytes to write. Uint8 byte array.
+ */
+
+ /**
+ * @typedef {object}  OnProfileLoadResult
+ * @property {string} version  - Version of the driver
+ * @property {string} mode     - Mode of the profile ["Client", "Server"]
+ */
+ 
+/**
+ * @typedef {object}  OnTagsResult
+ * @property {string} status  - Status of the operation ["Complete", "Receive", "Failure"]
+ * @property {Tag[]}  tags    - Array of Tags (if any active) to complete
+ * @property {Data}   data    - The resulting data (if any) to send.
+ */
  
  /**
- * @typedef {object} CompleteTag
- * @property {string}   Tag.address  - Tag address.
- * @property {*}        Tag.value    - (optional) Tag value.
- * @property {string}   Tag.quality  - (optional) Quality of Tag: "Good", "Bad", "Uncertain"
+ * @typedef {object}  OnDataResult
+ * @property {string} status    - Status of the operation ["Complete", "Receive", "Failure"]
+ * @property {Tag[]}  tags      - Array of tags with .value field set to value parsed from incoming data. Must be same length and order as input.
  */
-
-/**
- * @typedef {object} OnProfileLoadResult
- * @property {string}   version     - Version of the driver.
- * @property {string}   mode        - Operation mode of the driver "Client", "Server".
- */
-
+ 
  /**
- * @typedef {object} OnValidateTagResult
- * @property {string}   address     - (optional) Fixed up tag address.
- * @property {DataType} dataType    - (optional) Fixed up Kepware data type. Required if input dataType is "Default".
- * @property {boolean}  readOnly    - (optional) Fixed up permitted communication mode.
- * @property {number}  bulkId      - (optional) Integer that identifies the group into which to bulk the tag with other tags.
- *                                    Universal Device Driver assigns the next available bulkId, if undefined. If defined for one tag,
- *                                    must define for all tags.
- * @property {boolean}  valid       - Indicates address validity.
- */ 
-
-/**
- * @typedef {object} OnTransactionResult
- * @property {string}        action - Action of the operation: "Complete", "Receive", "Fail".
- * @property {CompleteTag[]} tags   - Array of tags (if any active) to complete. Undefined indicates tag is not complete.
- * @property {Data}          data   - The resulting data (if any) to send. Undefined indicates no data to send.
+ * @typedef {object}  BuildMessageResult
+ * @property {string} status    - Status of the operation ["Complete", "Receive", "Failure"]
+ * @property {Data}   data      - Array of tags with .value field set to value parsed from incoming data. Must be same length and order as input.
  */
-
+ 
 
 /** Global variable for driver version */
 const VERSION = "2.0";
@@ -88,7 +79,15 @@ const ACTIONFAILURE = "Fail"
 const READ = "Read"
 const WRITE = "Write"
 
-// Global variable for all Kepware supported data_types
+/** HTTP Global variables */
+const METHOD = {
+    GET: 'GET',
+    POST: 'POST',
+}
+var http_request = null
+var http_response = null
+
+// Global variable for all supported data_types
 const data_types = {
     DEFAULT: "Default",
     STRING: "String", 
@@ -107,22 +106,62 @@ const data_types = {
     QWORD: "QWord" 
 }
 
-// Global variable for tag quality options
-const TAGQUALITY = {
-    GOOD: 'Good',
-    BAD: 'Bad',
-    UNCERTAIN: 'Uncertain'
-}
+/**
+ * Tag Addresses - Properties that are used by DPM and are calculated 
+ * using this profile
+ */
 
-/** HTTP Global variables */
-// Method object to use when building messages. Expand as necessary for PUT or DELETE
-const METHOD = {
-    GET: 'GET',
-    POST: 'POST',
+const FAULTCODEADDRESS = 'AvailablyEventFaultCode'
+const MATERIALIDADDRESS = 'MaterialMasterID'
+const PRODUCTIONCOUNTADDRESS = 'ProductionCount'
+const JOBORDERIDADDRESS = 'JobOrderID'
+const TARGETQUANTITYADDRESS = 'TargetQuantity'
+const SCRAPCOUNTSADDRESS = 'ScrapCounts'
+
+// References to IoT Gateway tags to be read
+const MACHINE1IALARMID = "Channel1.Device1.machine1-iAlarmID"
+const MACHINE1MAUTO = "Channel1.Device1.machine1-mAuto"
+const MACHINE1MERROR = "Channel1.Device1.machine1-mError"
+const MACHINE1MWAIT = "Channel1.Device1.machine1-mWait"
+const MACHINE1MWAITIN = "Channel1.Device1.machine1-mWaitIn"
+const MACHINE1IVARIANT = "Channel1.Device1.machine1-iVariant"
+const MACHINE2IALARMID = "Channel1.Device1.machine2-iAlarmID"
+const MACHINE2MAUTO = "Channel1.Device1.machine2-mAuto"
+const MACHINE2MERROR = "Channel1.Device1.machine2-mError"
+const MACHINE2MWAIT = "Channel1.Device1.machine2-mWait"
+const MACHINE2MWAITIN = "Channel1.Device1.machine2-mWaitIn"
+const MACHINE2MPARTOUT = "Channel1.Device1.machine2-mPartOut"
+
+
+// Initialize Tag List
+var tag_list = {};
+tag_list[PRODUCTIONCOUNTADDRESS] = {
+    dataType: data_types.DWORD,
+    input_tag_list: [MACHINE2MPARTOUT]
 }
-// Global objects to manage the request and response building.
-var http_request = null
-var http_response = null
+tag_list[MATERIALIDADDRESS] = {
+    dataType: data_types.STRING,
+    input_tag_list: [MACHINE1IVARIANT]
+}
+tag_list[FAULTCODEADDRESS] = {
+    dataType: data_types.STRING,
+    input_tag_list: [MACHINE1IALARMID,MACHINE1MAUTO,
+        MACHINE1MERROR,MACHINE1MWAIT,MACHINE1MWAITIN,
+        MACHINE2IALARMID,MACHINE2MAUTO,
+        MACHINE2MERROR,MACHINE2MWAIT,MACHINE2MWAITIN,]
+}
+tag_list[JOBORDERIDADDRESS] = {
+    dataType: data_types.STRING,
+    input_tag_list: []
+}
+tag_list[TARGETQUANTITYADDRESS] = {
+    dataType: data_types.DWORD,
+    input_tag_list: []
+}
+tag_list[SCRAPCOUNTSADDRESS] = {
+    dataType: data_types.DWORD,
+    input_tag_list: []
+}
 
 /**
  * Logging Level System tag - control logging level from client application
@@ -130,10 +169,9 @@ var http_response = null
  * needed for debugging
  */
 
-const LOGGING_LEVEL_TAG = {
+ const LOGGING_LEVEL_TAG = {
     address: "LoggingLevel",
     dataType: data_types.WORD,
-    bulkId: 9999,
     readOnly: false,
 }
 const STD_LOGGING = 0;
@@ -165,13 +203,16 @@ log = function (msg, level = STD_LOGGING) {
 }
 
 /**
- * Retrieve driver metadata.
+ * Retrieve driver metadata
+ * Required.
  * 
- * @return {OnProfileLoadResult}  - Driver metadata.
+ * @return {OnProfileLoadResult} result - Driver metadata
  */
- function onProfileLoad() {
+function onProfileLoad() {
+    //Tell the driver what version of the script we’re using and mode of the socket connection
+    //VERSION should currently be set to “2.0”
+    //For unsolicited drivers, MODE is typically “Server”
 
-    // Initialized our internal cache
     try {
         initializeCache();
         
@@ -182,85 +223,69 @@ log = function (msg, level = STD_LOGGING) {
     // Initialize LoggingLevel control
     writeToCache(LOGGING_LEVEL_TAG.address, LOGGING_LEVEL);
 
-    // Initialize the http_response cache to handle multi packet processing. This is necessary
-    // for situations where the full HTTP response comes in multiple chunks or is large enough 
-    // to be split across multiple packets
+    // Initialize the http_response cache to handle multi packet processing
     http_response = new HttpResponse()
 
-    return { version: VERSION, mode: MODE };
+    // Initialize cache for tags - Can modify as needed depending on use case
+    writeToCache(FAULTCODEADDRESS, 0)
+    writeToCache(MATERIALIDADDRESS, '')
+    writeToCache(PRODUCTIONCOUNTADDRESS, 0)
+    writeToCache(JOBORDERIDADDRESS, '')
+    writeToCache(TARGETQUANTITYADDRESS, 0)
+    writeToCache(SCRAPCOUNTSADDRESS, 0)
+
+    return { version: VERSION, mode: MODE};
 }
 
 /**
  * Validate an address.
+ * Required.
+ * Used by the driver to check if a tag address is valid. Can also optionally either fail if the data type is not valid for the given address or correct the data type to one that is valid.
+ * @param {object}  info        - Object containing the function arguments.
+ * @param {Tag}     info.tag    - Single tag
  *
- * @param {object}  info          - Object containing the function arguments.
- * @param {Tag}     info.tag      - Single tag.
- *
- * @return {OnValidateTagResult}  - Single tag with a populated '.valid' field set.
- *
- * */
+ * @return {Tag} info.tag - Single tag 
+ */
+
 function onValidateTag(info) {
+    //Check for valid address, return fail if not (Address is info.tag.address)
+    //Check if data type is valid for this address (Data Type is info.tag.dataType)
+    //Optionally correct the data type if incorrect by updating the data type in the tag object being returned
+    //Set read only to true or false (info.tag.readOnly)
+    //Return tag object with validated address and data type
+
+    log(`onValidateTag - info: ${JSON.stringify(info)}`, VERBOSE_LOGGING)
     
-    // Check if it's LoggingLevel tag
-    if (info.tag.address === LOGGING_LEVEL_TAG.address) {
+   // Check if it's LoggingLevel tag
+   if (info.tag.address === LOGGING_LEVEL_TAG.address) {
         info.tag = validateLoggingTag(info.tag)
         log('onValidateTag - address "' + info.tag.address + '" is valid.', DEBUG_LOGGING)
         return info.tag;
     }
 
-    /*
-     * The regular expression to compare address to.
-     * ^, & Starting and ending anchors respectively. The match must occur between the two anchors
-     * [a-zA-Z]+ At least 1 or more characters between 'a' and 'z' or 'A' and 'Z'
-     * [0-9]+ At least 1 or more digits between 0 and 9
-     * | is an or statement between the expressions in the group
-     * ()* Whatever is in the parentheses can appear 0 or unlimited times
-     */
-    let regex = /^[a-zA-Z]+(\[[0-9]+\]|:[a-zA-Z]+)*$/;
-
-    try {
-        // Validate the address against the regular expression
-        if (regex.test(info.tag.address)) {
-            info.tag.valid = true;
-            
-            // All tags will be from a single API call, so they will be within the same
-            // bulkId group. If developing a profile that supports multiple API calls, 
-            // multiple bulkId groups will need to be managed.
-            info.tag.bulkId = 1;
-            
-            // Fix the data type to the correct one
-            if (info.tag.dataType === data_types.DEFAULT){
-                info.tag.dataType = data_types.STRING
-            }
-            log('onValidateTag - address "' + info.tag.address + '" is valid.', VERBOSE_LOGGING)
-        } else {
-            info.tag.valid = false;
-            log("ERROR: Tag address '" + info.tag.address + "' is not valid");
-        }
-        return info.tag
-    }
-    catch (e) {
-        // Use log to provide helpful information that can assist with error resolution
-        log("ERROR: onValidateTag - Unexpected error: " + e.message);
+    if (info.tag.address in tag_list) {
+        info.tag.valid = true;
+        info.tag.dataType = tag_list[info.tag.address].dataType;
+        info.tag.readOnly = true;
+    } 
+    else {
         info.tag.valid = false;
-        return info.tag;
     }
 
+    return info.tag;
 }
 
 /**
- * Handle request for a tag to be completed.
- *
- * @param {object}      info       - Object containing the function arguments.
- * @param {MessageType} info.type  - Communication mode for tags. Can be undefined.
- * @param {Tag[]}       info.tags  - Tags currently being processed. Can be undefined.
- *
- * @return {OnTransactionResult}   - The action to take, tags to complete (if any) and/or data to send (if any).
+ * Process an array of Tags.
+ * Required.
+ * @param {object}      info            - Object containing the function arguments.
+ * @param {MessageType} info.type       - Communication mode for the data array being formed (are we reading or writing a tag?)
+ * @param {Tag[]}       info.tags       - Tags currently being processed; v2.0 does not support blocking / bulk reads or writes, so only a single Tag is processed at a time.
+ * @return {OnTagsResult} result - The status of the operation and the data to send (if any).
  */
-
 function onTagsRequest(info) {
-    log(`onTagsRequest - info: ${JSON.stringify(info)}`, DEBUG_LOGGING)
-
+    log(`onTagsRequest - info: ${JSON.stringify(info)}`, VERBOSE_LOGGING)
+    
     // Clear response in event this is a tag transaction after a failure.
     http_response.reset()
 
@@ -272,52 +297,39 @@ function onTagsRequest(info) {
     
     switch(info.type){
         case READ:
-            // BulkId 1 is used to read API call for bulk tag group. Extend this check to validate
-            switch(info.tags[0].bulkId){
-                case 1:
-                    http_request = new HttpRequest();
-                    
-                    // Configure parameters for building the HTTP Request
-                    http_request.host = "localhost"; 
-                    http_request.port = 80;
-                    http_request.method = METHOD.GET;
+            // If it's a tag to read data. Determines when data is read and update all tags
+            if (tag_list[info.tags[0].address].input_tag_list.length) {
+                http_request = new HttpRequest();
 
-                    // Path parameter is the relative path without the base host/IP. Defaults to '/'
-                    // example: http://host/device1/read
-                    // relative path: /device1/read
-                    http_request.path = '/relative/path'
+                let json = tag_list[info.tags[0].address].input_tag_list;
+                let payload = JSON.stringify(json);
+                
+                http_request.host = "localhost"; 
+                http_request.port = 39320;
+                http_request.method = METHOD.POST;
+                http_request.path = '/iotgateway/read'
+                http_request.headers = {
+                    'HeaderKey': 'headervalue',
+                }
+                http_request.username = 'Administrator'
+                http_request.password = ''
 
-                    // HTTP headers can be populated by JSON key value pairs. headers built with parameters will not be
-                    // overwritten by these definitions
-                    http_request.headers = {
-                        // 'HeaderKey': 'headervalue',
-                    }
-
-                    // JSON payload for whatever REST API call needs to be implemented. In many cases this would be 
-                    // payloads based on the tag and action type provided from the UDD driver in the info data
-                    // object. Technically this could be a different object type (XML or plain text) depending on 
-                    // the REST API being targeted.
-                    let json = {
-                        'placeholder': "This is just a place holder for whatever JSON payload the user needs to implement"}
-                    let payload = JSON.stringify(json);
-
-                    // buildRequest method is used to take a string of the HTTP payload and convert it into the
-                    // appropriate byte array for the UDD driver to process and send to the endpoint.
-                    let request = http_request.buildRequest(payload)
-                    if (!request) {
-                        log(`ERROR: onTagRequest - http_request build failed for "${info.tags[0].address}"`)
-                        return { action: ACTIONFAILURE }
-                    }
-                    
-                    let readFrame = stringToBytes(request);
-                    return {action: ACTIONRECEIVE, data: readFrame};
-                default:
-                    // BulkId was not setup. Complete action and move on.
-                    return {action: ACTIONCOMPLETE}
+                let request = http_request.buildRequest(payload)
+                if (!request) {
+                    log(`ERROR: onTagRequest - http_request build failed for "${info.tags[0].address}"`)
+                    return { action: ACTIONFAILURE }
+                }
+                
+                let readFrame = stringToBytes(request);
+                return {action: ACTIONRECEIVE, data: readFrame};
+            }
+            else {
+                info.tags[0].value = readFromCache(info.tags[0].address).value
+                return { action: ACTIONCOMPLETE, tags: info.tags}
             }
         case WRITE:
-            // Tag Writes are not built into example/API but can be implemented
-            log(`ERROR: onTagRequest - Write command for address "${info.tags[0].address}" is not supported`)
+            // Writes are not built into example/API
+            log(`ERROR: onTagRequest - Write command for address "${info.tags[0].address}" is not supported.`)
             return {action: ACTIONFAILURE};
         default:
             log(`ERROR: onTagRequest - Unexpected error. Command type unknown: ${info.type}`);
@@ -327,35 +339,18 @@ function onTagsRequest(info) {
 }
 
 /**
- * Handle incoming data.
+ * Parse an array of bytes from the device.
+ * Required.
+ * @param {object}      info            - Object containing the function arguments.
+ * @param {MessageType} info.type       - Communication mode for the data being formed.
+ * @param {Tag[]}       info.tags       - Tags currently being processed; v2.0 does not support blocking / bulk reads or writes, so only a single Tag is processed at a time.
+ *                                      - Parsed values will be inserted into the array.
+ * @param {Data}        info.data       - The incoming data.
  *
- * @param {object}      info       - Object containing the function arguments.
- * @param {MessageType} info.type  - Communication mode for tags. Can be undefined.
- * @param {Tag[]}       info.tags  - Tags currently being processed. Can be undefined.
- * @param {Data}        info.data  - The incoming data.
- *
- * @return {OnTransactionResult}   - The action to take, tags to complete (if any) and/or data to send (if any).
+ * @return {OnDataResult} result - The status and tags processed.
  */
 function onData(info) {
-    log(`onData - info.tags: ${JSON.stringify(info.tags)}`, DEBUG_LOGGING)
-
-    // For situations where request retries are sent from the driver, it could result in the webserver sending multiple responses back.
-    // In these situations, data would be received that is not connected to a tag transaction event. This looks like an "unsolicited" data receipt
-    // and the driver will call the onData without any tags.
-
-    // Since HTTP is solicited, this will assume that any responses without a tag in the transaction will be ignored.
-
-    if (info.tags == undefined){
-        log(`onData - info.tags does not exist. Info: ${JSON.stringify(info)}`, DEBUG_LOGGING)
-
-        log(`ERROR - Unexpected data received without a tag request. Possibly an extra response from a retry event.`)
-
-        // reset cache of http_response info
-        // This preps for the next message transaction to be received 
-        http_response.reset()
-        
-        return { action: ACTIONCOMPLETE }
-    }
+    log(`onData - info.tags: ${JSON.stringify(info.tags)}`, VERBOSE_LOGGING)
 
     let tags = info.tags;
 
@@ -367,80 +362,98 @@ function onData(info) {
 
     // Process HTTP payload message. When the result is true, this indicates that the complete HTTP message has been processed
     // Otherwise a return object to send back to the UDD driver is returned to either get more of the HTTP paylod or indicate a failure
-    let status = null
-    try {
-        status = http_response.processHTTPmsg(stringResponse)
-    }
-    catch(err)
-    {
-        log(`ERROR - Processing message for HTTP response with processHTTPmsg() failure. Msg: ${err}`)
-        // reset cache of http_response info after completing processing the whole message. 
-        // This preps for the next message transaction to be received 
-        http_response.reset()
-
-        // Action is completed but not returning tags puts tag value associated with onData request into bad quality.
-        return { action: ACTIONCOMPLETE }
-    }
-
-    // If processing HTTP message isn't complete, returned status will wait for more data from the network
+    let status = http_response.processHTTPmsg(stringResponse)
     if (status !== true) { return status }
 
-    // After receiving full message, verify/handle response code. This can be extened to verify any expected response code based
-    // on REST API call being sent.
+    // After receiving full message, verify/handle response code
     if(http_response.getResponseCode() !== 200) {
         // FAILURE - Non successful response from HTTP server
-        log(`ERROR: Failed HTTP response. Received HTTP Response Code ${http_response.getResponseCode()}; Reason: ${http_response.headers['reason']}; Message: ${http_response.msg}`)
+        log(`ERROR: onData - Received HTTP Code ${http_response.getResponseCode()}; Message: ${JSON.stringify(http_response.msg)}`)
         
-        // reset cache of http_response info in the event of a failure
+        // reset cache of http_response info
         http_response.reset()
-        // Action is completed but not returning tags puts tag value associated with onData request into bad quality.
-        return { action: ACTIONCOMPLETE }
+        return { action: ACTIONFAILURE }
     }
 
     // Get the JSON body of the response
     let jsonStr = http_response.msg.slice(http_response.msg.indexOf('{'));
     var jsonObj = {}
 
-    // Parse the JSON string
+     // Parse the JSON string
     try {
-        jsonObj = JSON.parse(jsonStr);
+        jsonObj = JSON.parse(jsonStr).readResults;
     }
     catch (e) {
         log(`ERROR: onData - JSON parsing error: ${e.message}`)
-        // reset cache of http_response info in the event of a failure
+        // reset cache of http_response info
         http_response.reset()
         return { action: ACTIONFAILURE }
     }
 
-    // Evaluate each tag's address and get the JSON value 
-    tags.forEach(function (tag) {
-
-        tag.value = null;
-        let value = get_value_from_payload(tag.address, jsonObj)
-        log(`onData - Value in payload at address "${tag.address}": ${JSON.stringify(value)}`, VERBOSE_LOGGING)
-        
-        // If the result is an object not a individual value, then convert to string
-        if(typeof(value) === 'object') {
-            value = JSON.stringify(value)
+    let values = {}
+    /**
+     * Transform the JSON response to an easier model where:
+     * 
+     * { 'tag name': {
+     *      'v': value,
+     *      's': success,
+     *      'r': reason,
+     *      't': timestamp
+     *      },
+     *  'tag name 2': {},...
+     * }
+     * 
+     * See IoT Gateway documentation for definitions of the data returned 
+     * by the REST server interface
+     * 
+     *  
+     * */ 
+    for (x of jsonObj){
+        if (tag_list[tags[0].address].input_tag_list.includes(x.id)){
+            values[x.id] = {}
+            for (const key in x) {
+                if (key !== 'id') {
+                    values[x.id][key] = x[key]
+                }
+            }
         }
+    }
 
-        tag.value = value
+    log(`Values Array: ${JSON.stringify(values)}`, DEBUG_LOGGING)
 
-        // Determine if value was not found in the payload
-        if (tag.value === undefined || tag.value === null) {
-            tag.quality = TAGQUALITY.BAD
-        }
-        else {
-            tag.quality = TAGQUALITY.GOOD
-        }
-        
-    });
-    
-    // reset cache of http_response info after completing processing the whole message. 
-    // This preps for the next message transaction to be received
+    // Execute logic based on tag being read.
+    let result = false;
+    switch(tags[0].address){
+        case FAULTCODEADDRESS:
+            result = getEventFaultCode(values)
+            break;
+        case PRODUCTIONCOUNTADDRESS:
+            result = getProductionCount(values)
+            break;
+        case MATERIALIDADDRESS:
+            result = getMaterialID(values)
+            break;
+        case JOBORDERIDADDRESS:
+        case TARGETQUANTITYADDRESS:
+        case SCRAPCOUNTSADDRESS:
+            // Not used in example
+            return { action: ACTIONCOMPLETE };
+        default:
+            log(`onData - ERROR - Unknown address ${tags[0].address} received`)
+            return { action: ACTIONCOMPLETE };
+    }
+
+    // check to see if result failed from data check
+    if (result === false){
+        return { action: ACTIONFAILURE };
+    }
+    writeToCache(tags[0].address, result)
+    tags[0].value = result
+
+    // reset cache of http_response info
     http_response.reset()
 
-    return { action: ACTIONCOMPLETE, tags: tags };
+    return { action: ACTIONCOMPLETE, tags: tags};
 
 }
 
@@ -458,7 +471,7 @@ function onData(info) {
  * Methods:
  * @method buildRequest - Builds the necessary HTTP request message based on the properties configured.
  *****************************************************************************************************/
- class HttpRequest {
+class HttpRequest {
     #HEADERS = {
         CONTENTTYPE: 'Content-Type',
         HOST: 'Host',
@@ -586,7 +599,7 @@ function onData(info) {
  * Handles data processing of single and multi-packet responses, supporting responses
  * identifeid as chunked or content lengths beyond a single transport payload size.
  * 
- * Properties:
+ * * Properties:
  * @param {Object} headers - JSON object of the HTTP headers from the response message
  * @param {String} msg - payload or message body from the response message
  * 
@@ -615,9 +628,6 @@ function onData(info) {
      * @param {String} stringResponse - string value from the message data received from the UDD driver 
      * @returns {true | action response} - will return true if the complete HTTP message has been received or 
      *                                      actions to listen for more data from the UDD driver
-     * 
-    * Exceptions:
-    * @throws {string} - Error message if processing fails
      */
     processHTTPmsg(stringResponse) {
         this.unprocessed = this.unprocessed.concat(...stringResponse)
@@ -694,24 +704,21 @@ function onData(info) {
      * Parses HTTP Header
      * @param {string} msg 
      * @returns {object} JSON Object of Header parameters
-     * 
-     * @throws {string} error message thrown if header parsing fails
      */
     #parseHTTPHeader(msg) {
         let header = {}
         let fields = msg.split(this.#HTTP_HEADER_TERMINATOR)
 
         // Parse status field of HTTP header to access response code and reason information
-        let regex = /^((?:HTTP\/)\d[.]\d)[ ](\d+)[ ]([\w| ]+)$/
-        let status_split = regex.exec(fields[0])
-        if(status_split !== null) {
-            header['version'] = status_split[1];
-            header['response_code'] = parseInt(status_split[2]);
-            header['reason'] = status_split[3];
+        let regex = /^(?:HTTP\/)\d[.]\d[ ]\d+[ ]\w+$/
+        if(regex.test(fields[0])) {
+            let status_split = fields[0].split(/[ ]/)
+            header['version'] = status_split[0];
+            header['response_code'] = parseInt(status_split[1]);
+            header['reason'] = status_split[2];
         }
         else {
-            // header['version'] = fields[0]
-            throw "HEADER PARSE FAILURE"
+            header['version'] = fields[0]
         }
 
         // Parse rest of header into keys/values
@@ -763,12 +770,20 @@ function onData(info) {
 
 }
 
+
+/* ********************************************************************************************************************
+ * Helper functions
+ * *******************************************************************************************************************/
+ 
 /**
- * Helper function to translate string to bytes.
+ * Parse an array of bytes from the device.
  * Required.
- * 
- * @param {string} str
- * @return {Data} 
+ * @param {object}      info            - Object containing the function arguments.
+ * @param {MessageType} info.type       - Communication mode for the data being formed.
+ * @param {Tag[]}       info.tags       - Tags currently being processed. Can be null. Parsed values will be inserted into the array.
+ * @param {Data}        info.data       - The incoming data.
+ *
+ * @return {ParseMessageResult} result - The status, bytes read, and tags processed.
  */
  function stringToBytes(str) {
     let byteArray = [];
@@ -791,11 +806,13 @@ function onData(info) {
  * @returns {Tag} LoggingLevel Tag validation results
  */
 
-function validateLoggingTag(tag) {
-    tag.dataType = LOGGING_LEVEL_TAG.dataType
-    tag.bulkId = LOGGING_LEVEL_TAG.bulkId
-    tag.readOnly = LOGGING_LEVEL_TAG.readOnly;
+ function validateLoggingTag(tag) {
+    if (tag.dataType === data_types.DEFAULT){
+        tag.dataType = data_types.WORD
+    }
+    tag.readOnly = false;
     tag.valid = true;
+
     return tag
 }
 
@@ -818,31 +835,115 @@ function updateLoggingTag(info) {
 }
 
 
-/**
- * Search Object for value based on Tag address
- * @param {Tag.address} address 
- * @param {object} payload 
- * @returns {*} Returns value at object location. Objects will be transformed to strings
- */
- function get_value_from_payload(address, payload) {
-    let regex =  /^[a-zA-Z]+\[[0-9]+\]$/
 
-    // Create array from address which will be used to walk through payload
-    let array = address.split(':');
 
-    // drill into payload to pull value based on address array
-    while (array.length)  {
-        let key = array.shift()
-        if (regex.test(key)) {
-            let name = /[a-zA-Z]+/.exec(key)
-            let index = /\[[0-9]+\]/.exec(key)
-            index = index[0].replace(/\[|\]/g, '')
-            payload = payload[name][parseInt(index)]
-        }
-        else {
-            payload = payload[key];
-        }
-    }
-    return payload
-    
+
+/********************************************************************
+ * Calculate Fault Codes for AvailabilityEventFaultCode
+ * @param {Object} values 
+ * @returns {String} Value of Fault Code
+ ********************************************************************/
+
+// Error Code Statuses used as outputs for AvailabilityEventFaultCode
+const STATCODES = {
+    waiting: 1,
+    starving: 2,
+    running: 0,
+    other: -999
 }
+
+function getEventFaultCode(values) {
+    // Waiting Check
+    if (values[MACHINE1MWAIT].v && values[MACHINE2MWAIT].v) {
+        return STATCODES.waiting
+    }
+    // Starving Checks
+    else if ((values[MACHINE1MWAITIN].v && values[MACHINE2MWAITIN].v) || (values[MACHINE1MWAITIN].v && values[MACHINE2MWAIT].v)) {
+        return STATCODES.starving
+    }
+    else if (values[MACHINE1MERROR].v && values[MACHINE2MWAITIN].v) {
+        return values[MACHINE1IALARMID].v
+    }
+    else if (values[MACHINE2MERROR].v && values[MACHINE1MWAIT].v) {
+        return values[MACHINE2IALARMID].v
+    }
+    else if (values[MACHINE1MERROR].v && values[MACHINE2MERROR].v) {
+        return values[MACHINE1IALARMID].v
+    }
+    else if (!(values[MACHINE1MAUTO].v) && values[MACHINE2MERROR].v) {
+        return STATCODES.other
+    }
+    else if (!values[MACHINE2MAUTO].v && values[MACHINE1MERROR].v) {
+        return STATCODES.other
+    }
+    else if (!values[MACHINE1MAUTO].v && !values[MACHINE2MAUTO].v) {
+        return STATCODES.other
+    }
+    // Running state if no other conditions are true
+    else {
+        return STATCODES.running
+    }
+}
+
+/********************************************************************
+ * Calculates Part Count
+ * @param {Object} values 
+ * @returns {Number} Count value calculated
+ ********************************************************************/
+function getProductionCount(values) {
+    let count = readFromCache(PRODUCTIONCOUNTADDRESS).value
+    if (readFromCache(MACHINE2MPARTOUT).value === undefined) {
+        writeToCache(MACHINE2MPARTOUT, values[MACHINE2MPARTOUT])
+    }
+    if (values[MACHINE2MPARTOUT].v && !readFromCache(MACHINE2MPARTOUT).value) {
+        count++;
+    }
+    writeToCache(MACHINE2MPARTOUT, values[MACHINE2MPARTOUT].v)
+    return count
+}
+
+
+
+
+/********************************************************************
+ * Provides Material Code for MaterialMasterID
+ * @param {Object} values 
+ * @returns {String} Material Code
+ ********************************************************************/
+
+// Material Code lookups used as output for MaterialMasterID
+const UNKNOWNMATERIALID = 'MaterialUnknown'
+const MATERIALIDCODES = {
+    1: 216706,
+    2: 229285,
+    3: 134589,
+    4: 219823,
+    5: 202310,
+    7: 216860,
+    8: 222431,
+    9: 205766,
+}
+
+function getMaterialID(values) {
+    // Initial read will verify if previous value exists. Returns current if it does not exist.
+    if (readFromCache(MACHINE1IVARIANT).value === undefined) {
+        writeToCache(MACHINE1IVARIANT, values[MACHINE1IVARIANT])
+    }
+
+    if (values[MACHINE1IVARIANT].v !== readFromCache(MACHINE1IVARIANT).value) {
+        // reset Production Count to 0
+        writeToCache(PRODUCTIONCOUNTADDRESS, 0)    
+        writeToCache(MACHINE1IVARIANT, values[MACHINE1IVARIANT].v)
+    }
+    
+    if (MATERIALIDCODES.hasOwnProperty(values[MACHINE1IVARIANT].v)) {
+        return MATERIALIDCODES[values[MACHINE1IVARIANT].v]
+    }
+    else {
+        return UNKNOWNMATERIALID
+    }
+}
+
+
+
+

@@ -3,24 +3,23 @@
  * This file is copyright (c) PTC, Inc.
  * All rights reserved.
  * 
- * Name:        HTTP-client-profile-generic
+ * Name:        HTTP-client-profile-OpenWeatherMap
  * Description: A simple HTTP example profile that queries from a RESTful endpoint
  * that is expecting a JSON object returned in the response.
  * 
- * Generic HTTP client to show how to use the HttpRequest and HttpResponse classes
+ * OpenWeatherMap (https://openweathermap.org/api) has APIs that can be queried for various
+ * weather data. This example uses the One Call API (https://openweathermap.org/api/one-call-api)
  * 
- * Developed on Kepware Server version 6.14, UDD V2.0
+ * User will need to create a free API key to be able to query endpoint
+ * 
+ * Developed on Kepware Server version 6.11, UDD V2.0
  * 
  * Update History:
- * 0.1.2:   Added handling for incomplete HTTP headers in response.
- * 0.1.3:   Fixed chunking message parsing error. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/18
+ * 0.1.4:   Added handling for incomplete HTTP headers in response.
+ * 0.1.5:   Fixed chunking message parsing error. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/18
  *          Added reset of http response buffer to handle failures/reconnects. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/15
- * 0.1.4:   Fixed HTTP reason code and description parsing. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/21
- *          Added handling for potential extra responses received during retry 
- *              process https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/16
- * 1.0.0:   Updated for bulk tag processing feature added to Kepware 6.14
- *          Updated for tag quality feature added to Kepware 6.14
- * Version:     1.0.0
+ * 
+ * Version:     0.1.5
 ******************************************************************************/
 /**
  * @typedef {string} MessageType - Type of communication "Read", "Write".
@@ -39,14 +38,12 @@
  * @property {string}   Tag.address  - Tag address.
  * @property {DataType} Tag.dataType - Kepware data type.
  * @property {boolean}  Tag.readOnly - Indicates permitted communication mode.
- * @property {number}  Tag.bulkId   - (optional) Integer that identifies the group into which to bulk the tag with other tags.
  */ 
  
  /**
  * @typedef {object} CompleteTag
  * @property {string}   Tag.address  - Tag address.
  * @property {*}        Tag.value    - (optional) Tag value.
- * @property {string}   Tag.quality  - (optional) Quality of Tag: "Good", "Bad", "Uncertain"
  */
 
 /**
@@ -60,9 +57,6 @@
  * @property {string}   address     - (optional) Fixed up tag address.
  * @property {DataType} dataType    - (optional) Fixed up Kepware data type. Required if input dataType is "Default".
  * @property {boolean}  readOnly    - (optional) Fixed up permitted communication mode.
- * @property {number}  bulkId      - (optional) Integer that identifies the group into which to bulk the tag with other tags.
- *                                    Universal Device Driver assigns the next available bulkId, if undefined. If defined for one tag,
- *                                    must define for all tags.
  * @property {boolean}  valid       - Indicates address validity.
  */ 
 
@@ -107,33 +101,23 @@ const data_types = {
     QWORD: "QWord" 
 }
 
-// Global variable for tag quality options
-const TAGQUALITY = {
-    GOOD: 'Good',
-    BAD: 'Bad',
-    UNCERTAIN: 'Uncertain'
-}
-
 /** HTTP Global variables */
-// Method object to use when building messages. Expand as necessary for PUT or DELETE
 const METHOD = {
     GET: 'GET',
     POST: 'POST',
 }
-// Global objects to manage the request and response building.
 var http_request = null
 var http_response = null
 
 /**
  * Logging Level System tag - control logging level from client application
- * This can be used to avoid logging verbose UDD log messages unless 
+ * This can be used to avoid logging verbose SDS protocol messages unless 
  * needed for debugging
  */
 
-const LOGGING_LEVEL_TAG = {
+ const LOGGING_LEVEL_TAG = {
     address: "LoggingLevel",
     dataType: data_types.WORD,
-    bulkId: 9999,
     readOnly: false,
 }
 const STD_LOGGING = 0;
@@ -164,12 +148,14 @@ log = function (msg, level = STD_LOGGING) {
     }
 }
 
+
+
 /**
  * Retrieve driver metadata.
  * 
  * @return {OnProfileLoadResult}  - Driver metadata.
  */
- function onProfileLoad() {
+function onProfileLoad() {
 
     // Initialized our internal cache
     try {
@@ -182,9 +168,7 @@ log = function (msg, level = STD_LOGGING) {
     // Initialize LoggingLevel control
     writeToCache(LOGGING_LEVEL_TAG.address, LOGGING_LEVEL);
 
-    // Initialize the http_response cache to handle multi packet processing. This is necessary
-    // for situations where the full HTTP response comes in multiple chunks or is large enough 
-    // to be split across multiple packets
+    // Initialize the http_response cache to handle multi packet processing
     http_response = new HttpResponse()
 
     return { version: VERSION, mode: MODE };
@@ -198,16 +182,55 @@ log = function (msg, level = STD_LOGGING) {
  *
  * @return {OnValidateTagResult}  - Single tag with a populated '.valid' field set.
  *
- * */
+ * 
+ * Unlike traditional PLC devices HTTP protocol doesn't use a defined data encoding and
+ * the types of data that can be use drastically vary. Many requests for systems that use HTTP 
+ * can often return a JSON object. We can use this object to return multiple tag values.
+ * 
+ * SEE https://openweathermap.org/api/one-call-3 for JSON example of One Call API 
+ * this example uses from OpenWeatherMap
+ * 
+ * Example JSON for tag addressing discussion:
+ * {
+ *  "visibility": 1000,
+ *  "wind": {
+ *      "speed": 8.38,
+ *      "direction": "north" 
+ *      },
+ *  "weather": [
+ *      {
+ *      "main": "sunny",
+ *      "description": "partly sunny"
+ *      }
+ *      {
+ *      "main": "sunny",
+ *      "description": "mostly sunny"
+ *      }
+ *  ]
+ * }
+ * 
+ * Here are three examples of addresses we can use in this JSON use case
+ * 1. <key> ex. Tag address = “visibility”
+ * 2. <key>:<value> ex. Tag address = “wind:speed”
+ * 3. <key>[<index>]:<value> ex. Tag address = “weather[0]:main”
+ * 
+ * If the value asked for is a JSON object, it will be returned as a string 
+ * representation of that value.
+ * 
+ * Tag address = "wind"
+ * Value returned = {"speed": 8.38, "direction": "north"}
+ * 
+ * We will use this address to help parse the data in onData
+*/
 function onValidateTag(info) {
-    
+
     // Check if it's LoggingLevel tag
     if (info.tag.address === LOGGING_LEVEL_TAG.address) {
         info.tag = validateLoggingTag(info.tag)
-        log('onValidateTag - address "' + info.tag.address + '" is valid.', DEBUG_LOGGING)
+        log('onValidateTag - address "' + info.tag.address + '" is valid.', VERBOSE_LOGGING)
         return info.tag;
     }
-
+    
     /*
      * The regular expression to compare address to.
      * ^, & Starting and ending anchors respectively. The match must occur between the two anchors
@@ -222,12 +245,6 @@ function onValidateTag(info) {
         // Validate the address against the regular expression
         if (regex.test(info.tag.address)) {
             info.tag.valid = true;
-            
-            // All tags will be from a single API call, so they will be within the same
-            // bulkId group. If developing a profile that supports multiple API calls, 
-            // multiple bulkId groups will need to be managed.
-            info.tag.bulkId = 1;
-            
             // Fix the data type to the correct one
             if (info.tag.dataType === data_types.DEFAULT){
                 info.tag.dataType = data_types.STRING
@@ -257,7 +274,6 @@ function onValidateTag(info) {
  *
  * @return {OnTransactionResult}   - The action to take, tags to complete (if any) and/or data to send (if any).
  */
-
 function onTagsRequest(info) {
     log(`onTagsRequest - info: ${JSON.stringify(info)}`, DEBUG_LOGGING)
 
@@ -269,61 +285,38 @@ function onTagsRequest(info) {
         let returnAction = updateLoggingTag(info);
         return returnAction;
     }
-    
+
     switch(info.type){
         case READ:
-            // BulkId 1 is used to read API call for bulk tag group. Extend this check to validate
-            switch(info.tags[0].bulkId){
-                case 1:
-                    http_request = new HttpRequest();
-                    
-                    // Configure parameters for building the HTTP Request
-                    http_request.host = "localhost"; 
-                    http_request.port = 80;
-                    http_request.method = METHOD.GET;
+            http_request = new HttpRequest();
 
-                    // Path parameter is the relative path without the base host/IP. Defaults to '/'
-                    // example: http://host/device1/read
-                    // relative path: /device1/read
-                    http_request.path = '/relative/path'
+            // API that uses the One Call API 1.0 from OpenWeatherMap.org
+            let appId = "{API KEY}";  // API key
+            let lat = "43.65" // Latitude of location
+            let lon = "-70.25" // Longitude of location 
+            let rel_path = `/data/2.5/onecall?lat=${lat}&lon=${lon}&appid=${appId}`;
+            
+            http_request.host = "api.openweathermap.org"; 
+            http_request.port = 80;
+            http_request.method = METHOD.GET;
+            http_request.path = rel_path;
 
-                    // HTTP headers can be populated by JSON key value pairs. headers built with parameters will not be
-                    // overwritten by these definitions
-                    http_request.headers = {
-                        // 'HeaderKey': 'headervalue',
-                    }
-
-                    // JSON payload for whatever REST API call needs to be implemented. In many cases this would be 
-                    // payloads based on the tag and action type provided from the UDD driver in the info data
-                    // object. Technically this could be a different object type (XML or plain text) depending on 
-                    // the REST API being targeted.
-                    let json = {
-                        'placeholder': "This is just a place holder for whatever JSON payload the user needs to implement"}
-                    let payload = JSON.stringify(json);
-
-                    // buildRequest method is used to take a string of the HTTP payload and convert it into the
-                    // appropriate byte array for the UDD driver to process and send to the endpoint.
-                    let request = http_request.buildRequest(payload)
-                    if (!request) {
-                        log(`ERROR: onTagRequest - http_request build failed for "${info.tags[0].address}"`)
-                        return { action: ACTIONFAILURE }
-                    }
-                    
-                    let readFrame = stringToBytes(request);
-                    return {action: ACTIONRECEIVE, data: readFrame};
-                default:
-                    // BulkId was not setup. Complete action and move on.
-                    return {action: ACTIONCOMPLETE}
+            let request = http_request.buildRequest()
+            if (!request) {
+                log(`ERROR: onTagRequest - http_request build failed for "${info.tags[0].address}"`)
+                return { action: ACTIONFAILURE }
             }
+            
+            let readFrame = stringToBytes(request);
+            return {action: ACTIONRECEIVE, data: readFrame};
         case WRITE:
-            // Tag Writes are not built into example/API but can be implemented
+            // Writes are not built into example/API
             log(`ERROR: onTagRequest - Write command for address "${info.tags[0].address}" is not supported`)
             return {action: ACTIONFAILURE};
         default:
             log(`ERROR: onTagRequest - Unexpected error. Command type unknown: ${info.type}`);
             return {action: ACTIONFAILURE};
     }
-    
 }
 
 /**
@@ -339,24 +332,6 @@ function onTagsRequest(info) {
 function onData(info) {
     log(`onData - info.tags: ${JSON.stringify(info.tags)}`, DEBUG_LOGGING)
 
-    // For situations where request retries are sent from the driver, it could result in the webserver sending multiple responses back.
-    // In these situations, data would be received that is not connected to a tag transaction event. This looks like an "unsolicited" data receipt
-    // and the driver will call the onData without any tags.
-
-    // Since HTTP is solicited, this will assume that any responses without a tag in the transaction will be ignored.
-
-    if (info.tags == undefined){
-        log(`onData - info.tags does not exist. Info: ${JSON.stringify(info)}`, DEBUG_LOGGING)
-
-        log(`ERROR - Unexpected data received without a tag request. Possibly an extra response from a retry event.`)
-
-        // reset cache of http_response info
-        // This preps for the next message transaction to be received 
-        http_response.reset()
-        
-        return { action: ACTIONCOMPLETE }
-    }
-
     let tags = info.tags;
 
     // Convert the response to a string
@@ -367,34 +342,18 @@ function onData(info) {
 
     // Process HTTP payload message. When the result is true, this indicates that the complete HTTP message has been processed
     // Otherwise a return object to send back to the UDD driver is returned to either get more of the HTTP paylod or indicate a failure
-    let status = null
-    try {
-        status = http_response.processHTTPmsg(stringResponse)
-    }
-    catch(err)
-    {
-        log(`ERROR - Processing message for HTTP response with processHTTPmsg() failure. Msg: ${err}`)
-        // reset cache of http_response info after completing processing the whole message. 
-        // This preps for the next message transaction to be received 
-        http_response.reset()
-
-        // Action is completed but not returning tags puts tag value associated with onData request into bad quality.
-        return { action: ACTIONCOMPLETE }
-    }
-
-    // If processing HTTP message isn't complete, returned status will wait for more data from the network
+    let status = http_response.processHTTPmsg(stringResponse)
     if (status !== true) { return status }
 
-    // After receiving full message, verify/handle response code. This can be extened to verify any expected response code based
-    // on REST API call being sent.
+    
+    // After receiving full message, verify/handle response code
     if(http_response.getResponseCode() !== 200) {
         // FAILURE - Non successful response from HTTP server
-        log(`ERROR: Failed HTTP response. Received HTTP Response Code ${http_response.getResponseCode()}; Reason: ${http_response.headers['reason']}; Message: ${http_response.msg}`)
+        log(`ERROR: onData - Received HTTP Code ${http_response.getResponseCode()}; Message: ${JSON.stringify(http_response.msg)}`)
         
-        // reset cache of http_response info in the event of a failure
+        // reset cache of http_response info
         http_response.reset()
-        // Action is completed but not returning tags puts tag value associated with onData request into bad quality.
-        return { action: ACTIONCOMPLETE }
+        return { action: ACTIONFAILURE }
     }
 
     // Get the JSON body of the response
@@ -407,7 +366,7 @@ function onData(info) {
     }
     catch (e) {
         log(`ERROR: onData - JSON parsing error: ${e.message}`)
-        // reset cache of http_response info in the event of a failure
+        // reset cache of http_response info
         http_response.reset()
         return { action: ACTIONFAILURE }
     }
@@ -417,31 +376,41 @@ function onData(info) {
 
         tag.value = null;
         let value = get_value_from_payload(tag.address, jsonObj)
-        log(`onData - Value in payload at address "${tag.address}": ${JSON.stringify(value)}`, VERBOSE_LOGGING)
-        
-        // If the result is an object not a individual value, then convert to string
+        log(`onData - Value found for address "${tag.address}": ${JSON.stringify(value)}`, VERBOSE_LOGGING)
+        // If the result is an object, then convert to string
         if(typeof(value) === 'object') {
             value = JSON.stringify(value)
         }
-
         tag.value = value
-
-        // Determine if value was not found in the payload
-        if (tag.value === undefined || tag.value === null) {
-            tag.quality = TAGQUALITY.BAD
-        }
-        else {
-            tag.quality = TAGQUALITY.GOOD
-        }
-        
     });
-    
-    // reset cache of http_response info after completing processing the whole message. 
-    // This preps for the next message transaction to be received
+
+    // reset cache of http_response info
     http_response.reset()
 
-    return { action: ACTIONCOMPLETE, tags: tags };
+    // Determine if value was not found in the payload
+    if (tags[0].value === undefined || tags[0].value === null) {
+        return { action: ACTIONFAILURE };
+    }
 
+    return { action: ACTIONCOMPLETE, tags: tags };
+}
+
+/**
+ * Helper function to translate string to bytes.
+ * Required.
+ * 
+ * @param {string} str
+ * @return {Data} 
+ */
+ function stringToBytes(str) {
+    let byteArray = [];
+    for (let i = 0; i < str.length; i++) {
+        let char = str.charCodeAt(i) & 0xFF;
+        byteArray.push(char);
+    }
+
+    // return an array of bytes
+    return byteArray;
 }
 
 /*****************************************************************************************************
@@ -463,8 +432,7 @@ function onData(info) {
         CONTENTTYPE: 'Content-Type',
         HOST: 'Host',
         CONNECTION: 'Connection',
-        CONTENTLENGTH: 'Content-Length',
-        AUTHORIZATION: 'Authorization',
+        CONTENTLENGTH: 'Content-Length'
     }
     #HTTP_HEADER_TERMINATOR = '\r\n'
     constructor () {
@@ -473,8 +441,6 @@ function onData(info) {
         this.method = null
         this.host = null
         this.port = null
-        this.username = null
-        this.password = null
     }
     /**
      * Builds the necessary HTTP request message based on the properties configured.
@@ -493,11 +459,6 @@ function onData(info) {
         let request =  `${this.method} ${this.path} HTTP/1.1${this.#HTTP_HEADER_TERMINATOR}`;
 
         // Builds message headers
-        // Add Basic Authentication if required
-        if (this.username !== null & this.password !== null) {
-            request += this.#buildAuthString(this.username, this.password)
-        }
-
         // Unless specified Content-Type will default to application/json
         if (header_copy.hasOwnProperty(this.#HEADERS.CONTENTTYPE)) {
             request += `${this.#HEADERS.CONTENTTYPE}: ${header_copy[this.#HEADERS.CONTENTTYPE]}${this.#HTTP_HEADER_TERMINATOR}`;
@@ -540,41 +501,6 @@ function onData(info) {
         log(`HttpRequest.buildRequest - Request: ${request}`, VERBOSE_LOGGING)
         return request;
     }
-
-    #buildAuthString(username, password) {
-        if (typeof(username) != 'string' | typeof(password) != 'string') {
-            return false
-        }
-        let str = username + ':' + password;
-        let bytestr = stringToBytes(str);
-        let base64 = this.#bytesArrToBase64(bytestr)
-        let authstr = `${this.#HEADERS.AUTHORIZATION}: Basic ${base64}${this.#HTTP_HEADER_TERMINATOR}`
-        return authstr
-    }
-    /**
-     * Function to do Base64 encoding since it's not native. 
-     * 
-     * Response from https://stackoverflow.com/a/62362724
-     * 
-     * @param {*} arr ByteArray to convert
-     * @returns Base64Encoded string
-     */
-    #bytesArrToBase64(arr) {
-        const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"; // base64 alphabet
-        const bin = n => n.toString(2).padStart(8,0); // convert num to 8-bit binary string
-        const l = arr.length
-        let result = '';
-      
-        for(let i=0; i<=(l-1)/3; i++) {
-          let c1 = i*3+1>=l; // case when "=" is on end
-          let c2 = i*3+2>=l; // case when "=" is on end
-          let chunk = bin(arr[3*i]) + bin(c1? 0:arr[3*i+1]) + bin(c2? 0:arr[3*i+2]);
-          let r = chunk.match(/.{1,6}/g).map((x,j)=> j==3&&c2 ? '=' :(j==2&&c1 ? '=':abc[+('0b'+x)]));  
-          result += r.join('');
-        }
-      
-        return result;
-      }
 }
 
 
@@ -586,7 +512,7 @@ function onData(info) {
  * Handles data processing of single and multi-packet responses, supporting responses
  * identifeid as chunked or content lengths beyond a single transport payload size.
  * 
- * Properties:
+ * * Properties:
  * @param {Object} headers - JSON object of the HTTP headers from the response message
  * @param {String} msg - payload or message body from the response message
  * 
@@ -615,9 +541,6 @@ function onData(info) {
      * @param {String} stringResponse - string value from the message data received from the UDD driver 
      * @returns {true | action response} - will return true if the complete HTTP message has been received or 
      *                                      actions to listen for more data from the UDD driver
-     * 
-    * Exceptions:
-    * @throws {string} - Error message if processing fails
      */
     processHTTPmsg(stringResponse) {
         this.unprocessed = this.unprocessed.concat(...stringResponse)
@@ -639,10 +562,10 @@ function onData(info) {
         if ('Transfer-Encoding'.toLowerCase() in this.headers) {
             switch (this.headers['Transfer-Encoding'.toLowerCase()]) {
                 case 'chunked':
-                    log(`processHTTPmsg -Unprocessed Length: ${this.unprocessed.length}`, DEBUG_LOGGING)
+                    log(`processHTTPmsg - Unprocessed Length: ${this.unprocessed.length}`, DEBUG_LOGGING)
                     let result = this.#parseChunkedMsg(this.unprocessed);
                     this.msg = this.msg.concat(...result.msg);
-                    log(`processHTTPmsg -Processed Length: ${this.msg.length}`, DEBUG_LOGGING)
+                    log(`processHTTPmsg - Processed Length: ${this.msg.length}`, DEBUG_LOGGING)
                     if (!result.complete) {
                         this.unprocessed = result.leftover
                         log(`processHTTPmsg - Chunk Msg Not Complete. Unprocessed (post parse) Length: ${this.unprocessed.length}`, DEBUG_LOGGING)
@@ -694,24 +617,21 @@ function onData(info) {
      * Parses HTTP Header
      * @param {string} msg 
      * @returns {object} JSON Object of Header parameters
-     * 
-     * @throws {string} error message thrown if header parsing fails
      */
     #parseHTTPHeader(msg) {
         let header = {}
         let fields = msg.split(this.#HTTP_HEADER_TERMINATOR)
 
         // Parse status field of HTTP header to access response code and reason information
-        let regex = /^((?:HTTP\/)\d[.]\d)[ ](\d+)[ ]([\w| ]+)$/
-        let status_split = regex.exec(fields[0])
-        if(status_split !== null) {
-            header['version'] = status_split[1];
-            header['response_code'] = parseInt(status_split[2]);
-            header['reason'] = status_split[3];
+        let regex = /^(?:HTTP\/)\d[.]\d[ ]\d+[ ]\w+$/
+        if(regex.test(fields[0])) {
+            let status_split = fields[0].split(/[ ]/)
+            header['version'] = status_split[0];
+            header['response_code'] = parseInt(status_split[1]);
+            header['reason'] = status_split[2];
         }
         else {
-            // header['version'] = fields[0]
-            throw "HEADER PARSE FAILURE"
+            header['version'] = fields[0]
         }
 
         // Parse rest of header into keys/values
@@ -764,67 +684,12 @@ function onData(info) {
 }
 
 /**
- * Helper function to translate string to bytes.
- * Required.
- * 
- * @param {string} str
- * @return {Data} 
- */
- function stringToBytes(str) {
-    let byteArray = [];
-    for (let i = 0; i < str.length; i++) {
-        let char = str.charCodeAt(i) & 0xFF;
-        byteArray.push(char);
-    }
-
-    // return an array of bytes
-    return byteArray;
-}
-
-/**
- * Helper Functions for Logging Tag functionality 
- */
-
-/**
- * Validate LoggingLevel tag
- * @param {Tag} tag 
- * @returns {Tag} LoggingLevel Tag validation results
- */
-
-function validateLoggingTag(tag) {
-    tag.dataType = LOGGING_LEVEL_TAG.dataType
-    tag.bulkId = LOGGING_LEVEL_TAG.bulkId
-    tag.readOnly = LOGGING_LEVEL_TAG.readOnly;
-    tag.valid = true;
-    return tag
-}
-
-/**
- * Update the Logging tag to either read the value or modify the level.
- * @param {info} info 
- * @returns {OnTransactionResult} Transaction Result for LoggingLevel Tag
- */
-function updateLoggingTag(info) {
-    let value = undefined;
-    if (info.type === WRITE){
-        writeToCache(LOGGING_LEVEL_TAG.address, info.tags[0].value)
-        return {action: ACTIONCOMPLETE}
-    }
-    else {
-        value = readFromCache(LOGGING_LEVEL_TAG.address).value
-        info.tags[0].value = value;
-        return { action: ACTIONCOMPLETE, tags: info.tags};
-    }
-}
-
-
-/**
  * Search Object for value based on Tag address
  * @param {Tag.address} address 
  * @param {object} payload 
  * @returns {*} Returns value at object location. Objects will be transformed to strings
  */
- function get_value_from_payload(address, payload) {
+function get_value_from_payload(address, payload) {
     let regex =  /^[a-zA-Z]+\[[0-9]+\]$/
 
     // Create array from address which will be used to walk through payload
@@ -845,4 +710,44 @@ function updateLoggingTag(info) {
     }
     return payload
     
+}
+
+/**
+ * Helper Functions for Logging Tag functionality 
+ */
+
+/**
+ * Validate LoggingLevel tag
+ * @param {Tag} tag 
+ * @returns {Tag} LoggingLevel Tag validation results
+ */
+
+ function validateLoggingTag(tag) {
+    if (tag.dataType === "Default"){
+        tag.dataType = "word"
+    }
+    tag.readOnly = false;
+    tag.valid = true;
+
+    return tag
+}
+
+/**
+ * Update the Logging tag to either read the value or modify the level.
+ * @param {object}      info       - Object containing the function arguments.
+ * @param {Tag[]}       info.tags  - Tags currently being processed. Can be undefined.
+ * 
+ * @returns {OnTransactionResult} Transaction Result for LoggingLevel Tag
+ */
+function updateLoggingTag(info) {
+    let value = undefined;
+    if (info.type === "Write"){
+        writeToCache(LOGGING_LEVEL_TAG.address, info.tags[0].value)
+        return {action: ACTIONCOMPLETE}
+    }
+    else {
+        value = readFromCache(LOGGING_LEVEL_TAG.address).value
+        info.tags[0].value = value;
+        return { action: ACTIONCOMPLETE, tags: info.tags};
+    }
 }

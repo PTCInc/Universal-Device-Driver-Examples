@@ -6,13 +6,12 @@ This profile was developed while connecting to a [QT50L-ETN](https://www.qlight.
 
 ## Requirements
 
-- Kepware versions 6.11 or higher that support the UDD v2.0 profile
+- Kepware versions 6.14 or higher that support the UDD v2.0 profile
+- Older versions that are not maintained can be found in the [archive](archive) folder
 
 ## Tag Configuration
 
 Below are the tags specific to monitoring and controlling the status of each light and sound/buzzer signal.
-
-*NOTE: Transactions are triggered by reading the "red" tag. To get any data, a client must read the "red" tag by default. This can be changed in the profile code if desired.*
 
 |Tag|Data Type|Access|Description|
 | :----------:  | :----------:  | :----------:  | :----------:  |

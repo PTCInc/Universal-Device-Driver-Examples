@@ -8,8 +8,14 @@
  * a JSON-like syntax as a tag address to access data that is JSON in format
  * from the device.
  * 
+ * Update History:
+ * 0.0.1:   Initial Release
+ * 0.1.0:   Updated for bulk tag processing feature added to Kepware 6.14. Will
+ *              work with pre-6.14 version since the parameter will be ignored.
+ *          Updated for tag quality feature added to Kepware 6.14. Will
+ *              work with pre-6.14 version since the parameter will be ignored.
  * 
- * Version: 0.0.1
+ * Version: 0.1.0
 ******************************************************************************/
 
 /** Status types */
@@ -34,6 +40,13 @@ const data_types = {
     LBCD: "LBCD",
     LLONG: "LLong",
     QWORD: "QWord" 
+}
+
+// Global variable for tag quality options
+const TAGQUALITY = {
+    GOOD: 'Good',
+    BAD: 'Bad',
+    UNCERTAIN: 'Uncertain'
 }
 
 /**
@@ -97,6 +110,13 @@ function onValidateTag(info) {
         // Validate the address against the regular expression
         if (regex.test(info.tag.address)) {
             info.tag.valid = true;
+
+            // Requests that return JSON likely will have multiple values that will be parsed
+            // into multiple tags. This means you'll neeed to assign a bulkId for every JSON
+            // blob received from the device/source. If developing a profile that supports 
+            // different JSON structures with multiple requests, multiple bulkId groups will need to be managed.
+            info.tag.bulkId = 1;
+
             // Fix the data type to the correct one
             if (info.tag.dataType === data_types.DEFAULT){
                 info.tag.dataType = data_types.STRING
@@ -142,12 +162,23 @@ function onData(info) {
 
         tag.value = null;
         let value = get_value_from_payload(tag.address, jsonObj)
-        log(`onData - Value found for address "${tag.address}": ${JSON.stringify(value)}`)
-        // If the result is an object, then convert to string
+        log(`onData - Value found for address "${tag.address}": ${JSON.stringify(value)}`, VERBOSE_LOGGING)
+        
+        // If the result is an object not a individual value, then convert to string
         if(typeof(value) === 'object') {
             value = JSON.stringify(value)
         }
+
         tag.value = value
+
+        // Determine if value was not found in the payload
+        if (tag.value === undefined || tag.value === null) {
+            tag.quality = TAGQUALITY.BAD
+        }
+        else {
+            tag.quality = TAGQUALITY.GOOD
+        }
+        
     });
 
     return { action: ACTIONCOMPLETE, tags: tags };

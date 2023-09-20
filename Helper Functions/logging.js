@@ -18,7 +18,10 @@
  * Output will include levels below the current value i.e. Setting to Debug will include 
  * verbose output.
  * 
- * Version: 0.0.3
+ * Update History:
+ * 0.1.0    Updated for bulk tag processing feature added to Kepware 6.14. Will
+ *              work with pre-6.14 version since the parameter will be ignored.
+ * Version: 0.1.0
 ******************************************************************************/
 
 /** Status types */
@@ -50,13 +53,14 @@ const data_types = {
 
 /**
  * Logging Level System tag - control logging level from client application
- * This can be used to avoid logging verbose SDS protocol messages unless 
+ * This can be used to avoid logging verbose UDD log messages unless 
  * needed for debugging
  */
 
 const LOGGING_LEVEL_TAG = {
     address: "LoggingLevel",
     dataType: data_types.WORD,
+    bulkId: 9999,
     readOnly: false,
 }
 const STD_LOGGING = 0;
@@ -136,13 +140,11 @@ function onTagsRequest(info) {
  * @returns {Tag} LoggingLevel Tag validation results
  */
 
- function validateLoggingTag(tag) {
-    if (tag.dataType === data_types.DEFAULT){
-        tag.dataType = data_types.WORD
-    }
-    tag.readOnly = false;
+function validateLoggingTag(tag) {
+    tag.dataType = LOGGING_LEVEL_TAG.dataType
+    tag.bulkId = LOGGING_LEVEL_TAG.bulkId
+    tag.readOnly = LOGGING_LEVEL_TAG.readOnly;
     tag.valid = true;
-
     return tag
 }
 
