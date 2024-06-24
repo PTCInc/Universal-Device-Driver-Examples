@@ -8,6 +8,10 @@ This profile was developed while connecting to an IND780 model indicator, though
 
 - Kepware versions 6.11 or higher that support the UDD v2.0 profile
 
+## Profile Notes
+
+- SDS Message termination characters may vary by model and implementation from Mettler Toledo. Use the `SDS_TERMINATOR_SEND` and `SDS_TERMINATOR_RECEIVE` variables to modify message terminators as needed.
+
 ## Tag Configuration
 
 Tags can be created either using a predefined data address, system address or an SDS address defined by the interface.

@@ -12,8 +12,12 @@
  * Developed against a IND780 model terminal
  * Developed on Kepware Server version 6.11, UDD V2.0
  * 
+ * Update History:
+ * 0.1.2: Separated SDS terminators into sending and receiving terminators. Variations
+ *      of IND implementations by MT have shown different configurations across multiple 
+ *      device types.
  * 
- * Version: 0.1.1
+ * Version: 0.1.2
 ******************************************************************************/
 /**
  * @typedef {string} MessageType - Type of communication "Read", "Write".
@@ -112,7 +116,15 @@ let ActiveSubscriptions = [];
 let failedSubscriptions = [];
 
 /** SDS Constants **/
-const SDS_TERMINATOR = [10,13,62]; // Decimal encoded ASCII objects
+
+// Terminators were split out do to variations in IND support of termination character
+// processing. Modify as necessary.
+
+// Terminator for messages sent to scale IND
+const SDS_TERMINATOR_SEND = [10,13]; // Decimal encoded ASCII objects
+// Terminator for messages received from scale IND
+const SDS_TERMINATOR_RECEIVE = [10,13,62]; // Decimal encoded ASCII objects
+
 // SDS Commands
 const SDS_USER_CMD = "user";
 const SDS_PASS_CMD = "pass";
@@ -474,7 +486,7 @@ function onData(info) {
     
     // Convert message data to string and separate into multiple SDS messages as needed.
     let inboundData = byteToString(info.data);
-    let inboundDataArray = inboundData.split(byteToString(SDS_TERMINATOR));
+    let inboundDataArray = inboundData.split(byteToString(SDS_TERMINATOR_RECEIVE));
     
     // Remove last array element as it is typically length 0 due to .split function behavior. 
     // When separator is at begining or end of string, an element with a string of length 0 is created.
@@ -879,7 +891,7 @@ function serializeLoginData (obj) {
     data.push(...stringToByteArray(SDS_USER_CMD))           // command
     data.push(0x20)                                         // space
     data.push(...stringToByteArray (obj.username));         // username  
-    data.push(...SDS_TERMINATOR);                           // Terminator
+    data.push(...SDS_TERMINATOR_SEND);                      // Terminator
     return data;
 }
 
@@ -888,7 +900,7 @@ function serializePasswordData (obj) {
     data.push(...stringToByteArray(SDS_PASS_CMD))           // command
     data.push(0x20)                                         // space
     data.push(...stringToByteArray (obj.password));         // password  
-    data.push(...SDS_TERMINATOR);                           // Terminator
+    data.push(...SDS_TERMINATOR_SEND);                      // Terminator
     return data;
 }
 
@@ -897,7 +909,7 @@ function serializeSubscribeData (obj) {
     data.push(...stringToByteArray(SDS_CALLBACK_CMD))               // command
     data.push(0x20)                                                 // space
     data.push(...stringToByteArray (obj))                           // variable address
-    data.push(...SDS_TERMINATOR);                                   // Terminator
+    data.push(...SDS_TERMINATOR_SEND);                              // Terminator
     return data
 }
 
@@ -906,7 +918,7 @@ function serializeReadData (obj) {
     data.push(...stringToByteArray(SDS_READ_CMD))                   // command
     data.push(0x20)                                                 // space
     data.push(...stringToByteArray (obj))                           // variable address
-    data.push(...SDS_TERMINATOR);                                   // Terminator
+    data.push(...SDS_TERMINATOR_SEND);                              // Terminator
     return data
 }
 
@@ -931,7 +943,7 @@ function serializeWriteData (obj, value) {
         let convValue = JSON.stringify(value)
         data.push(...stringToByteArray(convValue))                  // value to write
     }                                           
-    data.push(...SDS_TERMINATOR);                                   // Terminator
+    data.push(...SDS_TERMINATOR_SEND);                              // Terminator
     return data
 }
 
