@@ -23,7 +23,9 @@
  *              process https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/16
  * 1.0.0:   Updated for bulk tag processing feature added to Kepware 6.14
  *          Updated for tag quality feature added to Kepware 6.14
- * Version:     1.0.0
+ * 1.0.1:   Updated API URL to One Call API 3.0. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/35
+ * 
+ * Version:     1.0.1
 ******************************************************************************/
 /**
  * @typedef {string} MessageType - Type of communication "Read", "Write".
@@ -323,7 +325,7 @@ function onTagsRequest(info) {
                     let appId = "<API KEY HERE>";  // API key
                     let lat = "43.65" // Latitude of location
                     let lon = "-70.25" // Longitude of location 
-                    let rel_path = `/data/2.5/onecall?lat=${lat}&lon=${lon}&appid=${appId}`;
+                    let rel_path = `/data/3.0/onecall?lat=${lat}&lon=${lon}&appid=${appId}`;
                     
                     http_request.host = "api.openweathermap.org"; 
                     http_request.port = 80;

@@ -18,8 +18,9 @@
  * 0.1.4:   Added handling for incomplete HTTP headers in response.
  * 0.1.5:   Fixed chunking message parsing error. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/18
  *          Added reset of http response buffer to handle failures/reconnects. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/15
+ * 0.1.6:   Updated API URL to One Call API 3.0. https://github.com/PTCInc/Universal-Device-Driver-Examples/issues/35
  * 
- * Version:     0.1.5
+ * Version:     0.1.6
 ******************************************************************************/
 /**
  * @typedef {string} MessageType - Type of communication "Read", "Write".
@@ -294,7 +295,7 @@ function onTagsRequest(info) {
             let appId = "{API KEY}";  // API key
             let lat = "43.65" // Latitude of location
             let lon = "-70.25" // Longitude of location 
-            let rel_path = `/data/2.5/onecall?lat=${lat}&lon=${lon}&appid=${appId}`;
+            let rel_path = `/data/3.0/onecall?lat=${lat}&lon=${lon}&appid=${appId}`;
             
             http_request.host = "api.openweathermap.org"; 
             http_request.port = 80;
